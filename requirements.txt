@@ -1,0 +1,6 @@
+moviepy
+pillow
+tensorflow
+spleeter
+tk
+numpy
