@@ -9,6 +9,7 @@ import numpy as np
 
 from spleeter.separator import Separator
 from moviepy.editor import VideoFileClip
+from moviepy.editor import AudioFileClip
 from moviepy.audio.AudioClip import AudioArrayClip
 import numpy as np
 import warnings
@@ -51,24 +52,30 @@ def Labels():
 def get_file_path():
     global browse
     # Open and return file path
-    browse = filedialog.askopenfilename(title = "Select A File", filetypes = (("mp4", "*.mp4"), ("mov files", "*.png"), ("wmv", "*.wmv"), ("avi", "*.avi")), multiple=True)
+    browse = filedialog.askopenfilename(title = "Select A File", filetypes = (("mp4", "*.mp4"), (".mp3","*.mp3"), (".wav","*.wav"), ("wmv", "*.wmv"), ("avi", "*.avi"), (".pcm","*.pcm"), (".aiff","*.aiff"), (".aac","*.aac"), (".ogg","*.ogg"), (".wma","*.wma"), (".flac","*.flac"), (".alac","*.alac"),("All files", "*.*")), multiple=True)
 
     
 def demusic(file_path):
     """ testmoviepy """
-
     
     # Making names of files
     file_path = file_path.replace("\\", "/")
     name = (((file_path.split("/"))[-1]).split("."))[0]
+    extension = (((file_path.split("/"))[-1]).split("."))[-1]
     path = "/".join(file_path.split("/")[:-1])
-    video_name = name + "-no-music.mp4"
+    output_name = name + "-no-music." + extension
+    audio_extensions = ["pcm", "wav", "aiff", "mp3", "aac", "ogg", "wma", "flac", "alac"]
 
     # Loading audio and video
     print("Loading audio and video:")
-    clip = VideoFileClip(file_path)
-    waveform = clip.audio.to_soundarray()
-    sample_rate = clip.audio.fps
+    if extension not in audio_extensions:
+        clip = VideoFileClip(file_path)
+        waveform = clip.audio.to_soundarray()
+        sample_rate = clip.audio.fps
+    else:
+        clip = AudioFileClip(file_path)
+        waveform = clip.to_soundarray()
+        sample_rate = clip.fps
 
     # Spliting audio into smaller parts
     print("Spliting audio into smaller parts:")
@@ -85,17 +92,24 @@ def demusic(file_path):
     for i,wav in enumerate(wave):
         print("Section:",i)
         pred = separator.separate(wav)
-        no_music[start:start+wav.shape[0],:]= pred['vocals']
+        no_music[start:start+wav.shape[0],:] = pred['vocals']
         start += wav.shape[0]
-
-    # Joining audio and video
-    print("Rejoining audio and video:")
+    
+    #Generating audio from numpy
     audio_no_music = AudioArrayClip(no_music, fps=sample_rate)
-    no_music_clip = clip.set_audio(audio_no_music)
+    
+    if extension not in audio_extensions:
+        # Joining audio and video
+        print("Rejoining audio and video:")
+        no_music_clip = clip.set_audio(audio_no_music)
 
-    # Exporting
-    print("Exporting product:")
-    no_music_clip.write_videofile(path+'/'+video_name)
+        # Exporting
+        print("Exporting video:")
+        no_music_clip.write_videofile(path+'/'+output_name)
+    else:
+        # Exporting
+        print("Exporting audio:")
+        audio_no_music.write_audiofile(path+'/'+output_name)
 
     print('Done')
     
