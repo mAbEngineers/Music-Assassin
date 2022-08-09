@@ -1,2 +1,2 @@
 # Music-Assassin
-Removes music from long video files.
+Removes music from long audio and video files.
