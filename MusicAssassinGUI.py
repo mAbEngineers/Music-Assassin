@@ -1,6 +1,5 @@
 import time
 from tkinter import *
-from tkinter import filedialog
 from PIL import ImageTk, Image
 import os
 import numpy as np
