@@ -1,6 +1,7 @@
-moviepy
-pillow
-tensorflow
-spleeter
-tk
-numpy
+python==3.8.10
+moviepy==1.0.3
+pillow==9.1.0
+tensorflow==2.9.1
+spleeter==2.3.0
+tk==0.1.0
+numpy==1.23.1
