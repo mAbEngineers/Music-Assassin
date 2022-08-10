@@ -90,7 +90,7 @@ def demusic(file_path):
     no_music = np.zeros(waveform.shape)
     start = 0
     for i,wav in enumerate(wave):
-        print("Section:",i)
+        print("Section:", i+1)
         pred = separator.separate(wav)
         no_music[start:start+wav.shape[0],:] = pred['vocals']
         start += wav.shape[0]
