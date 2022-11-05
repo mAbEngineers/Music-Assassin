@@ -142,7 +142,7 @@ def demusic(file_path):
         process = (
             ffmpeg
             .input('pipe:', format='f32le', ar=sample_rate)
-            .output(output_path, format=extension,  vcodec='copy', acodec='aac', strict='experimental')
+            .output(output_path, format=extension, strict='experimental')
             .overwrite_output()
             .run_async(pipe_stdin=True, pipe_stderr=True, quiet=True))
 
