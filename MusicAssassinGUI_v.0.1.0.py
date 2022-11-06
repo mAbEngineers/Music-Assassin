@@ -95,7 +95,7 @@ def demusic(file_path):
     input_ = ffmpeg.input(file_path,  noaccurate_seek=None)
     if extension not in audio_extensions:
         video = input_.video
-#     out,_ = input_.output('pipe:1', fo  rmat='f32le', ac=1, ar=sample_rate).overwrite_output().run(capture_stdout=True, capture_stderr=True)
+#     out,_ = input_.output('pipe:1', format='f32le', ac=1, ar=sample_rate).overwrite_output().run(capture_stdout=True, capture_stderr=True)
     process1 = (
         input_
             .output('pipe:1', format='f32le', ac=1, ar=sample_rate)
