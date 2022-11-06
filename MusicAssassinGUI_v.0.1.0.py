@@ -7,6 +7,7 @@ from tkinter import filedialog
 from PIL import ImageTk, Image
 import os
 #from tqdm import tqdm
+import warnings
 
 # For Logger
 import sys
@@ -19,6 +20,8 @@ from spleeter.separator import Separator
 import numpy as np
 import ffmpeg
 
+# warnings.simplefilter("ignore")
+
 # def requirements():
 #     os.system('cmd /c "pip install mediainfo"')
 #     os.system('cmd /c "pip install ffmpeg"')
@@ -28,11 +31,6 @@ import ffmpeg
 
 #Setting up GUI
 #Window or Display Size
-root = Tk()
-root.wm_title("Music Assassin")
-root.geometry("400x450")
-root.configure(background = 'white')
-
 
 #Label Functions
 def Labels():
@@ -72,7 +70,13 @@ def get_file_path():
     global browse
     # Open and return file path
     browse = filedialog.askopenfilename(title = "Select A File", filetypes = (("mp4", "*.mp4"), (".mp3","*.mp3"), (".wav","*.wav"), ("wmv", "*.wmv"), ("avi", "*.avi"), (".pcm","*.pcm"), (".aiff","*.aiff"), (".aac","*.aac"), (".ogg","*.ogg"), (".wma","*.wma"), (".flac","*.flac"), (".alac","*.alac"),("All files", "*.*")), multiple=True)
-
+    for i in browse:
+        file_path = i
+    if file_path not in files and file_path != "":
+        print(file_path)
+        root.update()
+        files.append(file_path)
+    
 def demusic(file_path): 
     """ testffmpeg """
     sample_rate = 44100
@@ -89,9 +93,17 @@ def demusic(file_path):
     print("Separating audio and video:")
     root.update()
     input_ = ffmpeg.input(file_path,  noaccurate_seek=None)
-    video = input_.video
-    out,_ = input_.output('pipe:', format='f32le', ac=1, ar=sample_rate).overwrite_output().run(capture_stdout=True, capture_stderr=True)
+    if extension not in audio_extensions:
+        video = input_.video
+#     out,_ = input_.output('pipe:1', fo  rmat='f32le', ac=1, ar=sample_rate).overwrite_output().run(capture_stdout=True, capture_stderr=True)
+    process1 = (
+        input_
+            .output('pipe:1', format='f32le', ac=1, ar=sample_rate)
+            .overwrite_output()
+            .run_async(pipe_stdout=True, pipe_stderr=True, quiet=True))
 
+    out,_ = process1.communicate()
+    
     # Buffer to Numpy
     print("Converting audio:")
     root.update()
@@ -114,7 +126,6 @@ def demusic(file_path):
     for i,wav in enumerate(wave):
         print("Section:",i+1)
         root.update()
-        root.update_idletasks()
         pred = separator.separate(wav)
         no_music[start:start+wav.shape[0]]= np.swapaxes(pred['vocals'],0,1)[0]
     #     no_music[i*wav.shape[0]:(i+1)*wav.shape[0]]= np.swapaxes(pred['vocals'],0,1)[0]
@@ -128,20 +139,19 @@ def demusic(file_path):
     if extension not in audio_extensions:
         print("Exporting video:")
         root.update()
-        root.update_idletasks()
         process = (
             ffmpeg
-            .input('pipe:', format='f32le', ar=sample_rate)
+            .input('pipe:0', format='f32le', ar=sample_rate)
             .output(video, output_path, format=extension,  vcodec='copy', acodec='aac', strict='experimental')
             .overwrite_output()
             .run_async(pipe_stdin=True, pipe_stderr=True, quiet=True))
+
     else:
         print("Exporting audio:")
         root.update()
-        root.update_idletasks()
         process = (
             ffmpeg
-            .input('pipe:', format='f32le', ar=sample_rate)
+            .input('pipe:0', format='f32le', ar=sample_rate)
             .output(output_path, format=extension, strict='experimental')
             .overwrite_output()
             .run_async(pipe_stdin=True, pipe_stderr=True, quiet=True))
@@ -157,12 +167,17 @@ def demusic_list():
         j += 1    
     #d2 = Label(root, text = "Done", wraplength=300, bg="black", fg="white", justify="left").pack(side=TOP, expand=None, fill=X)
     files = []
-    
-    
+    browse = [""]
+
+
 if __name__ == '__main__':
+    root = Tk()
+    root.wm_title("Music Assassin")
+    root.geometry("400x450")
+    root.configure(background = 'white')
+
     #Title Labels
     Labels()
-
     files = []
     file_path = ""
     browse = [""]
@@ -170,15 +185,5 @@ if __name__ == '__main__':
     f1 = Button(text = "Demusic", command = demusic_list, width = 15, bg="black", fg="white",font = "Verdana 10 bold").pack(side=TOP, expand=None, fill=X)
     Logger()
     print("Ready to demusic...")
-
-    while 1:
-        for i in browse:
-            file_path = i
-            if file_path not in files and file_path != "":
-                #l1 = Label(root, text = "File path: \n" + str(file_path), wraplength=300, justify="left").pack(side=TOP, expand=None, fill=X)
-                print(file_path)
-                root.update()
-                files.append(file_path)
-        browse = [""]
-        root.update()
-
+    root.mainloop()
+    exit(0)
