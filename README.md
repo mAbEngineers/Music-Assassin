@@ -29,3 +29,10 @@ Removes music from long audio and video files.
 
 -- Spawning of GUI when seperator() of spleeter is used in the Desktop App
 -- When GUI is closed it shows error in the Desktop App
+
+#Version 0.1.1
+- Similar working as previous version 
+- Extra samples added at both sides of each 1 minute section before sending to spleeter and removed later to increase accuracy of filtering
+- Added Remove Audio option that uses ffmpeg 
+- Resolved error when GUI is closed by using root.protocol("WM_DELETE_WINDOW", on_closing) of Tkinter
+- Used while loop with root.mainloop() to make it possible to select many files at the same time
