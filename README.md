@@ -36,3 +36,6 @@ Removes music from long audio and video files.
 - Added Remove Audio option that uses ffmpeg 
 - Resolved error when GUI is closed by using root.protocol("WM_DELETE_WINDOW", on_closing) of Tkinter
 - Used while loop with root.mainloop() to make it possible to select many files at the same time
+
+
+-- Spawning error not resolved yet
