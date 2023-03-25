@@ -266,6 +266,7 @@ print("Ready to demusic...")
 process1 = 0
 process2 = 0
 separator = 0
+pbar = 0
 sample_rate = 44100      
 
 if __name__ == '__main__':
