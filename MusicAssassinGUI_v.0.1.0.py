@@ -72,10 +72,10 @@ def get_file_path():
     browse = filedialog.askopenfilename(title = "Select A File", filetypes = (("mp4", "*.mp4"), (".mp3","*.mp3"), (".wav","*.wav"), ("wmv", "*.wmv"), ("avi", "*.avi"), (".pcm","*.pcm"), (".aiff","*.aiff"), (".aac","*.aac"), (".ogg","*.ogg"), (".wma","*.wma"), (".flac","*.flac"), (".alac","*.alac"),("All files", "*.*")), multiple=True)
     for i in browse:
         file_path = i
-    if file_path not in files and file_path != "":
-        print(file_path)
-        root.update()
-        files.append(file_path)
+        if file_path not in files and file_path != "":
+            print(file_path)
+            root.update()
+            files.append(file_path)
     
 def demusic(file_path): 
     """ testffmpeg """
