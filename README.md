@@ -48,7 +48,19 @@ Removes music from long audio and video files.
 
 -- Spawning error not resolved yet
 
+### Version 0.2.1
+- Similar working as previous version 
+- Code rearranged to decrease startup time
+- Queue is properly maintained and videos can be added during processing
+
+### Version 0.2.0
+- Similar working as previous version 
+- Spawning error partially resolved using solution at https://github.com/deezer/spleeter/issues/725
+- Uses lesser memory as code cleaned
+
+-- Spawns in only first loop and it closes them itself
+
 
 ## Message to fellow Programmers
 Our end goal is to make a real-time music filter, which may be in the form of a app that controls the devices sound controls, or as an addon for open source player like VLC.
-You can use the code to develop this further, or help us in producing it. The version history with existing errors are documented below.
+You can use the code to develop this further, or help us in producing it. The version history with existing errors are documented above.
