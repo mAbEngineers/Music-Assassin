@@ -1,6 +1,10 @@
 # Music-Assassin
 Removes music from long audio and video files.
 
+## Download Desktop app
+*/Latest/* v.0.2.0  https://github.com/mAb-Engineers/Music-Assassin/releases/download/v0.2.0/MusicAssassin_Setup.exe
+Older    v.0.1.0 https://github.com/mAb-Engineers/Music-Assassin/releases/download/v0.1.0/Setup.exe
+
 ## Versions History
 
 ### Version 0.0.1
