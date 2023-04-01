@@ -69,5 +69,5 @@ Your feedback will be much appreciated.*
 
 
 ## Message to fellow Programmers
-Our end goal is to make a real-time music filter, which may be in the form of a app that controls the devices sound controls, or as an addon for open source player like VLC.
+We want to make a real-time music filter, which may be in the form of a app that controls the devices sound controls, or as an addon for open source player like VLC.
 You can use the code to develop this further, or help us in producing it. The version history with existing errors are documented above.
