@@ -1,8 +1,5 @@
-python==3.8.10
-pip==22.1.2
-moviepy==1.0.3
-pillow==9.1.0
-tensorflow==2.9.1
+#python==3.8.10
+tensorflow==2.5.0
 spleeter==2.3.0
 tk==0.1.0
-numpy==1.23.1
+numpy==1.19.5
