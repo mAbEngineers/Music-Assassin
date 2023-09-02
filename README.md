@@ -59,15 +59,23 @@ Your feedback will be much appreciated.*
 
 -- Spawning error not resolved yet
 
+### Version 0.2.0
+- Similar working as previous version 
+- Spawning error partially resolved using solution at https://github.com/deezer/spleeter/issues/725
+- Uses lesser memory as code cleaned
+  
 ### Version 0.2.1
 - Similar working as previous version 
 - Code rearranged to decrease startup time
 - Queue is properly maintained and videos can be added during processing
 
-### Version 0.2.0
-- Similar working as previous version 
-- Spawning error partially resolved using solution at https://github.com/deezer/spleeter/issues/725
-- Uses lesser memory as code cleaned
+-- No output for audio
 
+### Version 0.2.2
+- Similar working as previous version 
+- Imports reduced to decrease startup time
+- Typo corrected so audio output working now
+  
 -- Spawns in only first loop and it closes them itself
+-- No output for mkv
 
