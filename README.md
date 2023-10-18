@@ -79,3 +79,13 @@ Your feedback will be much appreciated.*
 -- Spawns in only first loop and it closes them itself
 -- No output for mkv
 
+### Version 0.3.0
+- Functions reshuffled to decrease startup time
+- Needed to download ffprobe.exe and move to folder that contains python.exe
+- Used ffprobe to check if uploaded file has an audio, video or subtitle track
+- mkv's output correctly with 1st subtitle track and 1st audio track
+- on close function updated to return printing to default stdout
+  
+-- Spawns in only first loop and it closes them itself
+-- Only handles the first audio track (the rest are omitted)
+
