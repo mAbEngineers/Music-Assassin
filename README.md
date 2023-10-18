@@ -82,7 +82,7 @@ Your feedback will be much appreciated.*
 ### Version 0.3.0
 - Functions reshuffled to decrease startup time
 - Needed to download ffprobe.exe and move to folder that contains python.exe
-- Used ffprobe to check if uploaded file has an audio, video or subtitle track
+- Used ffprobe to check if uploaded file has an audio, video or subtitle track using solution at https://github.com/kkroening/ffmpeg-python/issues/204
 - mkv's output correctly with 1st subtitle track and 1st audio track
 - on close function updated to return printing to default stdout
   
