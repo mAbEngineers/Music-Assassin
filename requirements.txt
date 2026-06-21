@@ -8,6 +8,11 @@
 demucs>=3.0.0,<4.0     # Neural network separation (Python 3.8 compatible)
 spleeter==2.3.0        # 4-stem separation (fallback)
 
+# v0.4.4: MDX-Net vocal models (UVR) — vocals-only, fast on CPU, ~66-130 MB.
+# Wraps MDX-Net/MDXC/RoFormer/Demucs/VR behind one API; auto-downloads weights.
+audio-separator>=0.17  # MDX-Net via onnxruntime
+onnxruntime>=1.17      # CPU inference backend (use onnxruntime-gpu for CUDA)
+
 # ============================================================================
 # Protobuf - MUST be compatible with TensorFlow version
 # ============================================================================

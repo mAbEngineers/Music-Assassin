@@ -36,10 +36,12 @@ if "%1"=="" (
     echo   build.bat 0.3.3   - Enhanced Edition (Harmonic Rejection)
     echo   build.bat 0.3.4   - YouTube Edition
     echo   build.bat 0.4.0   - DEMUCS Natural Vocals
-    echo   build.bat 0.4.1   - DEMUCS/Spleeter Hybrid (Current)
+    echo   build.bat 0.4.1   - DEMUCS/Spleeter Hybrid
+    echo   build.bat 0.4.2   - DEMUCS/Spleeter Hybrid (memory-optimised)
+    echo   build.bat 0.5.0   - CPU Streaming Edition (Current)
     echo.
     echo Example:
-    echo   build.bat 0.4.1
+    echo   build.bat 0.5.0
     echo.
     pause
     exit /b 1
@@ -51,9 +53,9 @@ set SPEC_FILE=build\MusicAssassin_v%VERSION%.spec
 set BUILD_DIR=build\output_v%VERSION%
 
 REM Validate version
-if not "%VERSION%"=="0.0.1" if not "%VERSION%"=="0.0.2" if not "%VERSION%"=="0.1.0" if not "%VERSION%"=="0.2.0" if not "%VERSION%"=="0.3.3" if not "%VERSION%"=="0.3.4" if not "%VERSION%"=="0.4.0" if not "%VERSION%"=="0.4.1" (
+if not "%VERSION%"=="0.0.1" if not "%VERSION%"=="0.0.2" if not "%VERSION%"=="0.1.0" if not "%VERSION%"=="0.2.0" if not "%VERSION%"=="0.3.3" if not "%VERSION%"=="0.3.4" if not "%VERSION%"=="0.4.0" if not "%VERSION%"=="0.4.1" if not "%VERSION%"=="0.4.2" if not "%VERSION%"=="0.5.0" (
     echo ERROR: Invalid version '%VERSION%'
-    echo Valid versions: 0.0.1, 0.0.2, 0.1.0, 0.2.0, 0.3.3, 0.3.4, 0.4.0, 0.4.1
+    echo Valid versions: 0.0.1, 0.0.2, 0.1.0, 0.2.0, 0.3.3, 0.3.4, 0.4.0, 0.4.1, 0.4.2, 0.5.0
     pause
     exit /b 1
 )
@@ -159,9 +161,17 @@ if exist "%BUILD_DIR%\dist\MusicAssassin_v%VERSION%.exe" (
         echo Uses: Spleeter 4-stems, Harmonic Rejection, DSP filtering
         echo Supports: YouTube (experimental)
     ) else if "%VERSION%"=="0.4.1" (
-        echo Version 0.4.1: DEMUCS/Spleeter Hybrid (Current)
+        echo Version 0.4.1: DEMUCS/Spleeter Hybrid
         echo Uses: DEMUCS neural separation + Spleeter fallback
         echo Features: Advanced pre/post-filtering, 3 processing modes
+    ) else if "%VERSION%"=="0.4.2" (
+        echo Version 0.4.2: DEMUCS/Spleeter Hybrid (memory-optimised)
+        echo Uses: Selective lazy imports, chunked streaming export
+    ) else if "%VERSION%"=="0.5.0" (
+        echo Version 0.5.0: CPU Streaming Edition (Current)
+        echo Uses: DEMUCS only - htdemucs/htdemucs_ft/mdx_extra
+        echo Features: Model cache, 60s chunks, INT8 quantisation, ETA
+        echo Bundle: ~1.5 GB smaller than v0.4.x (no Spleeter/TF)
     )
     echo.
     

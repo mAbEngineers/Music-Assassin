@@ -10,7 +10,7 @@ Python: 3.8+
 
 import sys
 import os
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules, collect_all
 
 block_cipher = None
 
@@ -41,7 +41,7 @@ def _find_bin(name):
     import shutil
     path = shutil.which(name)
     if path:
-        return (path, '.')
+        return (path, 'bin')
     return None
 
 _ffmpeg  = _find_bin('ffmpeg')
@@ -77,6 +77,11 @@ _spleeter_src = os.path.join(_repo_root, 'pretrained_models')
 if os.path.isdir(_spleeter_src):
     _spleeter_models = [(_spleeter_src, 'pretrained_models')]
 
+# collect_all resolves the circular import that ffmpeg-python triggers inside
+# PyInstaller's partial module initialisation (hidden imports alone are not
+# enough — the package data and the correct import order both matter).
+_ffmpeg_pkg_datas, _ffmpeg_pkg_bins, _ffmpeg_pkg_hidden = collect_all('ffmpeg')
+
 # ============================================================================
 # ANALYSIS
 # ============================================================================
@@ -84,47 +89,37 @@ if os.path.isdir(_spleeter_src):
 a = Analysis(
     [os.path.join(_repo_root, 'MusicAssassinGUI_v0.4.1.py')],
     pathex=[_repo_root],
-    binaries=_binaries,
+    binaries=_binaries + _ffmpeg_pkg_bins,
     datas=[
-        # Package data files (YAML configs, etc.)
         *collect_data_files('demucs'),
         *collect_data_files('spleeter'),
         *collect_data_files('scipy'),
-        # Bundled model weights
+        *_ffmpeg_pkg_datas,
         *_demucs_models,
         *_spleeter_models,
-        # Tcl/Tk data dirs (Linux — hook can't auto-detect with builtin _tkinter)
         *([('/usr/share/tcltk/tcl8.6', 'tcl86'),
            ('/usr/share/tcltk/tk8.6',  'tk86')]
           if sys.platform == 'linux' else []),
     ],
     hiddenimports=[
-        # Core audio processing
+        *_ffmpeg_pkg_hidden,
         'torch',
         'torch.nn',
         'torch.utils',
         'torch.utils.data',
         'torchaudio',
         'torchaudio.functional',
-
-        # DEMUCS (3.x models — htdemucs/transformer not present in 3.x)
         'demucs',
         'demucs.pretrained',
         'demucs.apply',
         'demucs.audio',
-        'demucs.model',
-        'demucs.models',
         'demucs.states',
         'demucs.spec',
-
-        # Spleeter
         'spleeter',
         'spleeter.separator',
         'spleeter.model',
         'spleeter.audio',
         'spleeter.audio.adapter',
-
-        # Scientific computing
         'scipy',
         'scipy.signal',
         'scipy.fftpack',
@@ -133,23 +128,14 @@ a = Analysis(
         'numpy',
         'numpy.random',
         'numpy.fft',
-
-        # Image processing
         'skimage',
         'skimage.filters',
         'skimage.morphology',
-
-        # Audio analysis
         'librosa',
         'librosa.core',
         'librosa.util',
-
-        # TensorFlow (for Spleeter backend)
         'tensorflow',
         'tensorflow.python',
-
-        # FFmpeg Python wrapper
-        'ffmpeg',
 
         # Tkinter (should be included, but ensure it)
         'tkinter',

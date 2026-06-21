@@ -10,6 +10,7 @@ This directory contains multiple requirements files optimized for different use 
 | `requirements_latest.txt` | Latest versions of all deps | Medium | Fast | Excellent |
 | `requirements_pinned.txt` | Production/Reproducible | Medium | Fast | Excellent |
 | `requirements_demucs_only.txt` | DEMUCS neural separation | ~1.5GB | Slower | Best |
+| `requirements_mdxnet_only.txt` | **MDX-Net vocals-only (v0.4.4)** | ~66–130MB/model | Fast on CPU | Best vocals |
 | `requirements_spleeter_only.txt` | Lightweight Spleeter only | ~500MB | Faster | Good |
 | `requirements_by_version.txt` | Historical version info | Documentation | - | - |
 
@@ -48,6 +49,25 @@ pip install -r requirements_demucs_only.txt
 - Larger download (~1.5GB)
 - Slower processing
 - Requires more RAM
+
+---
+
+### 🎤 **MDX-Net-Only (Best Vocals, Light & Fast) — v0.4.4**
+The recommended path for **vocals-only** output. MDX-Net (UVR) models run on
+onnxruntime — cleaner vocal isolation than Spleeter and a step up from Demucs for
+vocals, while staying fast on CPU with small per-model downloads (~66–130 MB).
+
+```bash
+pip install -r requirements_mdxnet_only.txt
+```
+
+Models (selectable in the GUI dropdown, auto-downloaded on first use):
+- `UVR-MDX-NET-Voc_FT.onnx` — fast, ~66 MB (default)
+- `Kim_Vocal_2.onnx` — best CPU quality, ~130 MB
+
+**Pros:** vocals-focused, fast on CPU, tiny downloads, no TensorFlow.
+**Cons:** vocals-only (no other stems); needs onnxruntime.
+List all models: `audio-separator --list_models`.
 
 ---
 
@@ -215,10 +235,11 @@ Install if missing:
 
 ## Comparison Matrix
 
-### Audio Quality
-1. **DEMUCS** (best): Neural network separation, natural vocals
-2. **Spleeter 4-stem** (good): Well-established, consistent results
-3. **Spleeter 2-stem** (basic): Original spleeter format
+### Audio Quality (vocals-only)
+1. **MDX-Net (UVR)** (best vocals): Voc_FT / Kim_Vocal_2 — cleanest vocal isolation, light
+2. **DEMUCS** (excellent): Neural network separation, natural vocals (general 4-stem)
+3. **Spleeter 4-stem** (good): Well-established, consistent results
+4. **Spleeter 2-stem** (basic): Original spleeter format
 
 ### Processing Speed
 1. **Spleeter 2-stem** (fastest): ~2-3 min per 10 min audio

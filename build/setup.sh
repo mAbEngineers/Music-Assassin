@@ -31,6 +31,13 @@ else
     echo -e "${RED}✗${NC} Python not found (install Python 3.8+)"
 fi
 
+# Check uv (needed for v0.4.4+ Python 3.11 venv)
+if command -v uv &> /dev/null; then
+    echo -e "${GREEN}✓${NC} uv found ($(uv --version))"
+else
+    echo -e "${YELLOW}!${NC} uv not found — needed for v0.4.4+ (install: curl -LsSf https://astral.sh/uv/install.sh | sh)"
+fi
+
 # Check FFmpeg
 if command -v ffmpeg &> /dev/null; then
     echo -e "${GREEN}✓${NC} FFmpeg found"
@@ -57,10 +64,32 @@ echo "  ./build/build.sh 0.0.2   - MoviePy with Logger"
 echo "  ./build/build.sh 0.1.0   - FFMPEG Transition"
 echo "  ./build/build.sh 0.2.0   - FFMPEG Cleanup & Optimization"
 echo "  ./build/build.sh 0.3.3   - Enhanced Edition (Harmonic Rejection)"
-echo "  ./build/build.sh 0.4.1   - DEMUCS/Spleeter Hybrid (Current)"
+echo "  ./build/build.sh 0.4.1   - DEMUCS only (early prototype)"
+echo "  ./build/build.sh 0.4.2   - DEMUCS + Spleeter (chunked)"
+echo "  ./build/build.sh 0.4.3   - DEMUCS + Spleeter + MDX-Net (Current)"
 echo ""
 echo "Example:"
-echo "  ./build/build.sh 0.4.1"
+echo "  ./build/build.sh 0.4.3"
+echo ""
+echo "============================================================"
+echo "  v0.4.4 Environment Setup (Python 3.11 required)"
+echo "============================================================"
+echo ""
+echo "v0.4.4 uses audio-separator which requires Python 3.9+."
+echo "Run these once to create the v0.4.4 venv:"
+echo ""
+echo "  uv python install 3.11    # Python 3.11 needed: Spleeter requires <3.12"
+echo "  uv venv \$HOME/Documents/venvs/assassin_venv_v044 --python 3.11"
+echo "  source \$HOME/Documents/venvs/assassin_venv_v044/bin/activate"
+echo "  pip install -r requirements/requirements_mdxnet_only.txt"
+echo "  # To also include Demucs and Spleeter in the same venv:"
+echo "  pip install demucs torch torchaudio spleeter"
+echo ""
+echo "Then build or run with:"
+echo "  VENV_PATH=\$HOME/Documents/venvs/assassin_venv_v044 ./build/build.sh 0.4.4"
+echo "  # or:"
+echo "  source \$HOME/Documents/venvs/assassin_venv_v044/bin/activate"
+echo "  python MusicAssassinGUI_v0.4.4.py"
 echo ""
 echo "For more information:"
 echo "  cat build/README.md"

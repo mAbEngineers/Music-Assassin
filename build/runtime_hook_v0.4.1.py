@@ -12,7 +12,7 @@ if getattr(sys, 'frozen', False):
     # ---- FFmpeg -------------------------------------------------------
     # The ffmpeg (and ffprobe) binaries are bundled in the root of the
     # bundle. Prepend that directory to PATH so ffmpeg-python finds them.
-    os.environ['PATH'] = base + os.pathsep + os.environ.get('PATH', '')
+    os.environ['PATH'] = os.path.join(base, 'bin') + os.pathsep + os.environ.get('PATH', '')
 
     # ---- DEMUCS models ------------------------------------------------
     # torch.hub resolves checkpoints under {TORCH_HOME}/hub/checkpoints/
