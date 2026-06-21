@@ -47,9 +47,9 @@ if [ $# -eq 0 ]; then
     echo "  ./build.sh 0.2.0   - FFMPEG Cleanup & Optimization"
     echo "  ./build.sh 0.3.3   - Enhanced Edition (Harmonic Rejection)"
     echo "  ./build.sh 0.3.4   - YouTube Edition"
-    echo "  ./build.sh 0.4.1   - DEMUCS only (chunked, early prototype)"
-    echo "  ./build.sh 0.4.2   - DEMUCS + Spleeter (chunked, INT8, full DSP)"
-    echo "  ./build.sh 0.4.3   - DEMUCS + Spleeter + MDX-Net (vocals-only MDX-Net)"
+    echo "  ./build.sh 0.4.0   - DEMUCS only (chunked, early prototype)"
+    echo "  ./build.sh 0.4.1   - DEMUCS + Spleeter (chunked, INT8, full DSP)"
+    echo "  ./build.sh 0.4.2   - DEMUCS + Spleeter + MDX-Net (vocals-only MDX-Net)"
     echo "  ./build.sh 0.5.0   - CPU Streaming Edition (Current)"
     echo ""
     echo "Examples:"
@@ -68,12 +68,12 @@ BUILD_DIR="build/output_v${VERSION}"
 
 # Verify input is valid
 case $VERSION in
-    0.0.1|0.0.2|0.1.0|0.2.0|0.3.3|0.3.4|0.4.1|0.4.2|0.4.3|0.5.0)
+    0.0.1|0.0.2|0.1.0|0.2.0|0.3.3|0.3.4|0.4.0|0.4.1|0.4.2|0.5.0)
         # Valid version
         ;;
     *)
         echo -e "${RED}ERROR: Invalid version '${VERSION}'${NC}"
-        echo "Valid versions: 0.0.1, 0.0.2, 0.1.0, 0.2.0, 0.3.3, 0.3.4, 0.4.1, 0.4.2, 0.4.3, 0.5.0"
+        echo "Valid versions: 0.0.1, 0.0.2, 0.1.0, 0.2.0, 0.3.3, 0.3.4, 0.4.0, 0.4.1, 0.4.2, 0.5.0"
         exit 1
         ;;
 esac
@@ -199,19 +199,19 @@ if [ -f "$executable_path" ]; then
             echo "Supports: YouTube (experimental)"
             echo ""
             ;;
-        0.4.1)
-            echo "Version 0.4.1: DEMUCS only (early prototype)"
+        0.4.0)
+            echo "Version 0.4.0: DEMUCS only (early prototype)"
             echo "Uses: DEMUCS chunked async processing, torchaudio pipeline"
             echo ""
             ;;
-        0.4.2)
-            echo "Version 0.4.2: DEMUCS + Spleeter (chunked)"
+        0.4.1)
+            echo "Version 0.4.1: DEMUCS + Spleeter (chunked)"
             echo "Uses: DEMUCS + Spleeter 4-stems, INT8 quantisation, model cache"
             echo "Fix: Pre-chunked waveform (60s) — htdemucs_ft/mdx_extra no longer OOM"
             echo ""
             ;;
-        0.4.3)
-            echo "Version 0.4.3: DEMUCS + Spleeter + MDX-Net (Current)"
+        0.4.2)
+            echo "Version 0.4.2: DEMUCS + Spleeter + MDX-Net (Current)"
             echo "Uses: MDX-Net (UVR) vocals-only models via audio-separator (onnxruntime)"
             echo "Features: UVR-MDX-NET-Voc_FT + Kim_Vocal_2, fast on CPU, auto-download"
             echo "Requires: Python 3.9+ venv (audio-separator constraint)"

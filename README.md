@@ -3,13 +3,13 @@ Removes music from long audio and video files using AI source separation.
 
 ## Download / Run
 
-- **Latest**: v0.4.3 (Demucs + Spleeter + MDX-Net) — requires Python 3.9+
-- **Stable**: v0.4.2 (Demucs + Spleeter) — requires Python 3.11 (Spleeter < 3.12)
-- **Legacy**: v0.4.1 (Demucs only, early prototype)
+- **Latest**: v0.4.2 (Demucs + Spleeter + MDX-Net) — requires Python 3.9+
+- **Stable**: v0.4.1 (Demucs + Spleeter) — requires Python 3.11 (Spleeter < 3.12)
+- **Legacy**: v0.4.0 (Demucs only, early prototype)
 
-## Latest Version: v0.4.3 — Demucs + Spleeter + MDX-Net
+## Latest Version: v0.4.2 — Demucs + Spleeter + MDX-Net
 
-**New in v0.4.3**:
+**New in v0.4.2**:
 - **MDX-Net vocal models** via `audio-separator` (UVR-MDX-NET-Voc_FT · Kim_Vocal_2)
   - Vocals-only specialists: cleaner separation than general 4-stem models
   - Runs on onnxruntime (CPU) — fast, ~66–130 MB vs 600 MB for mdx_extra
@@ -18,7 +18,7 @@ Removes music from long audio and video files using AI source separation.
   - Prevents OOM on long files for all models including htdemucs_ft / mdx_extra (4-model bags)
   - Spleeter no longer loads the whole file into TensorFlow at once
 
-**Inherited from v0.4.2**:
+**Inherited from v0.4.1**:
 - Demucs + Spleeter dual-separator with model cache and INT8 quantisation
 - 3 processing modes: Normal / Balanced / Aggressive
 - Advanced pre/post-filtering (noise gate, harmonic rejection, de-esser, formant boost)
@@ -27,7 +27,7 @@ Removes music from long audio and video files using AI source separation.
 
 | Feature | Status |
 |---|---|
-| MDX-Net vocals-only separation (UVR) | v0.4.3+ |
+| MDX-Net vocals-only separation (UVR) | v0.4.2+ |
 | DEMUCS neural source separation | v0.4.1+ |
 | Spleeter 4-stems separation | v0.4.2+ |
 | Pre-chunked processing (60s, bounded RAM) | v0.4.2+ |
@@ -44,7 +44,7 @@ Removes music from long audio and video files using AI source separation.
 
 ## Installation & Usage
 
-### v0.4.3 (Demucs + Spleeter + MDX-Net) — Python 3.11 required
+### v0.4.2 (Demucs + Spleeter + MDX-Net) — Python 3.11 required
 
 Spleeter requires Python < 3.12, and audio-separator requires Python 3.9+, so Python 3.11 is the sweet spot.
 
@@ -57,27 +57,27 @@ uv python install 3.11
 uv venv $HOME/.venvs/music-assassin --python 3.11
 source $HOME/.venvs/music-assassin/bin/activate
 
-# Install all separators
-pip install audio-separator onnxruntime soundfile   # MDX-Net
-pip install demucs torch torchaudio                 # Demucs
-pip install spleeter==2.4.2 tensorflow==2.14.0      # Spleeter
+# Install all separators (use uv pip — faster and respects the active venv)
+uv pip install audio-separator onnxruntime soundfile   # MDX-Net
+uv pip install demucs torch torchaudio                 # Demucs
+uv pip install spleeter==2.4.2                         # Spleeter (pins TF 2.12.1)
 
-python MusicAssassinGUI_v0.4.3.py
+python MusicAssassinGUI_v0.4.2.py
 ```
 
-### v0.4.2 (Demucs + Spleeter) — Python 3.8–3.11
+### v0.4.1 (Demucs + Spleeter) — Python 3.8–3.11
 
 ```bash
 source venv/bin/activate   # Python 3.8–3.11
 pip install -r requirements/requirements_pinned.txt
-python MusicAssassinGUI_v0.4.2.py
+python MusicAssassinGUI_v0.4.1.py
 ```
 
-### v0.4.1 (Demucs only) — Python 3.8+
+### v0.4.0 (Demucs only) — Python 3.8+
 
 ```bash
 pip install demucs torch torchaudio
-python MusicAssassinGUI_v0.4.1.py
+python MusicAssassinGUI_v0.4.0.py
 ```
 
 ### Basic Usage
@@ -100,13 +100,13 @@ python MusicAssassinGUI_v0.4.1.py
 
 ## Version History
 
-### v0.4.3 — Demucs + Spleeter + MDX-Net (Current)
+### v0.4.2 — Demucs + Spleeter + MDX-Net (Current)
 - MDX-Net vocal specialist models (UVR) via audio-separator + onnxruntime
 - All three separators chunked: 60s + 2s overlap, overlap-add
 - Chunked progress bar with per-chunk ETA
 - Requires Python 3.9+, best on Python 3.11
 
-### v0.4.2 — Demucs + Spleeter (chunked)
+### v0.4.1 — Demucs + Spleeter (chunked)
 - **FIX**: Demucs pre-chunks waveform before tensor creation — htdemucs_ft / mdx_extra (4-model bags) no longer OOM on long files
 - **FIX**: Spleeter pre-chunks waveform — TF tensor expansion stays bounded
 - INT8 dynamic quantisation (htdemucs, ~2-3x CPU speedup)
@@ -114,7 +114,7 @@ python MusicAssassinGUI_v0.4.1.py
 - Global post-filter normalisation (no more static at end)
 - Tail fade-out on Demucs output
 
-### v0.4.1 — Demucs only (early prototype)
+### v0.4.0 — Demucs only (early prototype)
 - DEMUCS v4 async chunked processing (30s chunks)
 - Basic vocal enhancement chain (de-esser, compressor, saturation, normalise)
 - Simple GUI with mode selection (Premium / Fast / UltraLow RAM)
@@ -151,9 +151,9 @@ python MusicAssassinGUI_v0.4.1.py
 
 | Version | Python | Key deps |
 |---|---|---|
-| v0.4.3 | 3.9–3.11 | audio-separator, onnxruntime, demucs, torch, spleeter==2.4.2, tensorflow==2.14 |
-| v0.4.2 | 3.8–3.11 | demucs, torch, spleeter==2.4.2, tensorflow==2.14 |
-| v0.4.1 | 3.8+ | demucs, torch, torchaudio |
+| v0.4.2 | 3.9–3.11 | audio-separator, onnxruntime, demucs, torch, spleeter==2.4.2, tensorflow==2.12 |
+| v0.4.1 | 3.8–3.11 | demucs, torch, spleeter==2.4.2, tensorflow==2.12 |
+| v0.4.0 | 3.8+ | demucs, torch, torchaudio |
 | v0.3.x | 3.8+ | spleeter==2.3.0, scipy, librosa |
 
 All versions require **FFmpeg** (system package, not pip).
@@ -182,4 +182,4 @@ Feedback and contributions welcome. Planned improvements:
 
 ---
 
-*Music Assassin v0.4.3 — Demucs + Spleeter + MDX-Net with chunked processing and advanced DSP*
+*Music Assassin v0.4.2 — Demucs + Spleeter + MDX-Net with chunked processing and advanced DSP*

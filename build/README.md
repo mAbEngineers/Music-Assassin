@@ -15,11 +15,11 @@ build/
 ├── MusicAssassin_v0.1.0.spec
 ├── MusicAssassin_v0.2.0.spec
 ├── MusicAssassin_v0.3.3.spec
-├── MusicAssassin_v0.4.1.spec         (Demucs only)
-├── MusicAssassin_v0.4.2.spec         (Demucs + Spleeter)
+├── MusicAssassin_v0.4.0.spec         (Demucs only)
+├── MusicAssassin_v0.4.1.spec         (Demucs + Spleeter)
 ├── MusicAssassin_v0.5.0.spec
+├── runtime_hook_v0.4.0.py
 ├── runtime_hook_v0.4.1.py
-├── runtime_hook_v0.4.2.py
 ├── runtime_hook_v0.5.0.py
 ├── requirements_packaging.txt
 └── output_v*/                        (build outputs, gitignored)
@@ -32,17 +32,17 @@ build/
 ### Linux / macOS
 ```bash
 chmod +x build/build.sh
-./build/build.sh 0.4.3
+./build/build.sh 0.4.2
 ```
 
 ### Windows
 ```batch
-build\build.bat 0.4.3
+build\build.bat 0.4.2
 ```
 
 ### With a specific venv
 ```bash
-VENV_PATH=$HOME/.venvs/music-assassin ./build/build.sh 0.4.3
+VENV_PATH=$HOME/.venvs/music-assassin ./build/build.sh 0.4.2
 ```
 
 ---
@@ -56,16 +56,16 @@ VENV_PATH=$HOME/.venvs/music-assassin ./build/build.sh 0.4.3
 | 0.1.0 | `./build.sh 0.1.0` | FFmpeg + Spleeter | 3.8+ | Legacy |
 | 0.2.0 | `./build.sh 0.2.0` | FFmpeg + Spleeter | 3.8+ | Legacy |
 | 0.3.3 | `./build.sh 0.3.3` | Spleeter 4-stems + DSP | 3.8+ | Stable |
-| **0.4.1** | `./build.sh 0.4.1` | **Demucs only** | 3.8+ | Stable |
-| **0.4.2** | `./build.sh 0.4.2` | **Demucs + Spleeter** | 3.8–3.11 | Stable |
-| **0.4.3** | `./build.sh 0.4.3` | **Demucs + Spleeter + MDX-Net** | 3.9–3.11 | **Current** |
+| **0.4.0** | `./build.sh 0.4.0` | **Demucs only** | 3.8+ | Stable |
+| **0.4.1** | `./build.sh 0.4.1` | **Demucs + Spleeter** | 3.8–3.11 | Stable |
+| **0.4.2** | `./build.sh 0.4.2` | **Demucs + Spleeter + MDX-Net** | 3.9–3.11 | **Current** |
 | 0.5.0 | `./build.sh 0.5.0` | Demucs only (ONNX streaming) | 3.9+ | Experimental |
 
 ---
 
 ## Environment Setup
 
-### v0.4.3 (Current) — requires Python 3.11
+### v0.4.2 (Current) — requires Python 3.11
 
 `audio-separator` requires Python 3.9+, Spleeter requires Python < 3.12.
 Python 3.11 is the compatible intersection.
@@ -76,15 +76,15 @@ Python 3.11 is the compatible intersection.
 
 # Or manually:
 uv python install 3.11
-uv venv $HOME/.venvs/music-assassin --python 3.11
-source $HOME/.venvs/music-assassin/bin/activate
-pip install audio-separator onnxruntime soundfile   # MDX-Net
-pip install demucs torch torchaudio                 # Demucs
-pip install spleeter==2.4.2 tensorflow==2.14.0      # Spleeter
-pip install -r requirements/requirements_packaging.txt  # PyInstaller etc.
+uv venv $HOME/Documents/venvs/assassin_venv_v0.4.2 --python 3.11
+source $HOME/Documents/venvs/assassin_venv_v0.4.2/bin/activate
+uv pip install audio-separator onnxruntime soundfile   # MDX-Net
+uv pip install demucs torch torchaudio                 # Demucs
+uv pip install spleeter==2.4.2                         # Spleeter (pins TF 2.12.1)
+uv pip install -r requirements/requirements_packaging.txt
 ```
 
-### v0.4.2 — Python 3.8–3.11
+### v0.4.1 — Python 3.8–3.11
 
 ```bash
 source venv/bin/activate
@@ -92,7 +92,7 @@ pip install -r requirements/requirements_pinned.txt
 pip install -r requirements/requirements_packaging.txt
 ```
 
-### v0.4.1 — Python 3.8+
+### v0.4.0 — Python 3.8+
 
 ```bash
 pip install demucs torch torchaudio pyinstaller
@@ -102,17 +102,17 @@ pip install demucs torch torchaudio pyinstaller
 
 ## Spec File Notes
 
-### v0.4.1 — Demucs only
+### v0.4.0 — Demucs only
 - Includes: PyTorch, torchaudio, Demucs
 - Size: ~1.5 GB
 - No TensorFlow / Spleeter
 
-### v0.4.2 — Demucs + Spleeter
-- Includes: PyTorch, Demucs, Spleeter, TensorFlow
+### v0.4.1 — Demucs + Spleeter
+- Includes: PyTorch, Demucs, Spleeter, TensorFlow 2.12
 - Size: ~2–2.5 GB
 
-### v0.4.3 — Demucs + Spleeter + MDX-Net (Current)
-- Includes: PyTorch, Demucs, Spleeter, TensorFlow, onnxruntime, audio-separator
+### v0.4.2 — Demucs + Spleeter + MDX-Net (Current)
+- Includes: PyTorch, Demucs, Spleeter, TensorFlow 2.12, onnxruntime, audio-separator
 - Size: ~2.5–3 GB
 - Note: MDX-Net model weights (~66–130 MB) download on first run, not bundled
 
@@ -124,7 +124,7 @@ pip install demucs torch torchaudio pyinstaller
 
 ## Version Comparison
 
-| Feature | v0.4.1 | v0.4.2 | v0.4.3 |
+| Feature | v0.4.0 | v0.4.1 | v0.4.2 |
 |---------|--------|--------|--------|
 | Demucs (htdemucs / ft / mdx_extra) | ✅ | ✅ | ✅ |
 | Spleeter 4-stems | ❌ | ✅ | ✅ |
@@ -140,10 +140,10 @@ pip install demucs torch torchaudio pyinstaller
 ## Build Output Structure
 
 ```
-build/output_v0.4.3/
+build/output_v0.4.2/
 ├── dist/
-│   ├── MusicAssassin_v0.4.3          (executable — Linux/macOS)
-│   ├── MusicAssassin_v0.4.3.exe      (executable — Windows)
+│   ├── MusicAssassin_v0.4.2          (executable — Linux/macOS)
+│   ├── MusicAssassin_v0.4.2.exe      (executable — Windows)
 │   └── _internal/                    (bundled deps — do not delete)
 │       ├── demucs/
 │       ├── spleeter/
@@ -183,17 +183,17 @@ brew install ffmpeg
 
 ### audio-separator / onnxruntime missing
 ```bash
-pip install audio-separator onnxruntime soundfile
+uv pip install audio-separator onnxruntime soundfile
 ```
 
 ### Out of disk space
-Need 5 GB+ free. v0.4.3 bundle is ~2.5–3 GB.
+Need 5 GB+ free. v0.4.2 bundle is ~2.5–3 GB.
 
 ### Build hangs > 2 hours
 ```bash
 Ctrl+C
-rm -rf build/output_v0.4.3
-./build/build.sh 0.4.3
+rm -rf build/output_v0.4.2
+./build/build.sh 0.4.2
 ```
 
 ---
@@ -202,12 +202,12 @@ rm -rf build/output_v0.4.3
 
 ```bash
 # Tar archive (Linux/macOS)
-tar -czf Music-Assassin-v0.4.3.tar.gz build/output_v0.4.3/dist/
+tar -czf Music-Assassin-v0.4.2.tar.gz build/output_v0.4.2/dist/
 
 # Zip (Windows PowerShell)
-Compress-Archive -Path build\output_v0.4.3\dist -DestinationPath Music-Assassin-v0.4.3.zip
+Compress-Archive -Path build\output_v0.4.2\dist -DestinationPath Music-Assassin-v0.4.2.zip
 ```
 
 ---
 
-*Music-Assassin Build System — v0.4.3 current*
+*Music-Assassin Build System — v0.4.2 current*

@@ -1,5 +1,5 @@
 """
-PyInstaller runtime hook for Music-Assassin v0.4.1
+PyInstaller runtime hook for Music-Assassin v0.4.2
 Runs before any app code — sets env vars so bundled assets are found
 without any internet access.
 """
