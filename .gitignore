@@ -1,0 +1,26 @@
+__pycache__/
+*/__pycache__/
+*.pyc
+*.pyo
+
+# Model weights
+pretrained_models/
+
+# Build outputs
+build/output*/
+build/MusicAssassin_v*/
+dist/
+
+# Logs
+*.log
+
+# Editor swap files
+*.swp
+*.swo
+
+# Personal Claude Code session data
+.claude/
+
+# Python venv (if ever placed in repo)
+venv/
+.venv/

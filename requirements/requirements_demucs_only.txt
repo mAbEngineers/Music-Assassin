@@ -1,0 +1,40 @@
+# Music-Assassin v0.4.1 - DEMUCS Only
+# For users who want superior vocal quality and don't need Spleeter
+# Neural network-based separation with natural sounding results
+
+# ============================================================================
+# Audio Processing (DEMUCS only)
+# ============================================================================
+demucs>=4.0.0
+
+# ============================================================================
+# PyTorch - Deep Learning Framework (required for DEMUCS)
+# ============================================================================
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# ============================================================================
+# Core Dependencies
+# ============================================================================
+numpy>=1.24.0
+scipy>=1.10.0
+scikit-image>=0.20.0
+librosa>=0.10.0
+
+# ============================================================================
+# Audio/Video Processing
+# ============================================================================
+ffmpeg-python>=0.2.1
+
+# ============================================================================
+# Optional: YouTube Support
+# ============================================================================
+# yt-dlp>=2024.1.0  # Uncomment for YouTube URL support
+
+# ============================================================================
+# Notes
+# ============================================================================
+# - DEMUCS provides superior vocal quality with natural sound
+# - Requires PyTorch (can use GPU for faster processing)
+# - To use GPU: install pytorch with CUDA support after pip install
+#   Example: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118

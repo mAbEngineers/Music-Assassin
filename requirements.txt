@@ -1,5 +1,54 @@
-#python==3.8.10
-tensorflow==2.5.0
-spleeter==2.3.0
-tk==0.1.0
-numpy==1.19.5
+# Music-Assassin v0.4.1 - Main Requirements
+# DEMUCS/Spleeter Hybrid with Advanced Filtering
+# Python: 3.8.7 (tested) | 3.8-3.9 compatible
+
+# ============================================================================
+# Primary Audio Separation Engines
+# ============================================================================
+demucs>=3.0.0,<4.0     # Neural network separation (Python 3.8 compatible)
+spleeter==2.3.0        # 4-stem separation (fallback)
+
+# ============================================================================
+# Protobuf - MUST be compatible with TensorFlow version
+# ============================================================================
+# Note: TensorFlow 2.5.0 (used by Spleeter 2.3.0) requires EXACTLY protobuf 3.9.2
+protobuf==3.9.2  # Exact version required by TensorFlow 2.5.0
+
+# ============================================================================
+# Deep Learning Framework
+# ============================================================================
+torch>=1.10.0,<2.0.0   # PyTorch (Python 3.8 compatible)
+torchaudio>=0.10.0,<1.0.0  # Audio support for PyTorch
+
+# ============================================================================
+# Machine Learning Backend
+# ============================================================================
+# Note: TensorFlow is installed automatically by Spleeter (2.5.0)
+# TensorFlow from Spleeter is sufficient for both DEMUCS and Spleeter
+
+# ============================================================================
+# Numerical & Scientific Computing
+# ============================================================================
+# Note: These versions are pinned to match Spleeter 2.3.0 dependencies
+numpy>=1.16.0,<1.20.0
+scipy>=1.5.0,<1.6.0
+scikit-image>=0.18.0
+librosa==0.8.0  # Spleeter 2.3.0 requires exactly this version
+
+# ============================================================================
+# Multimedia Processing
+# ============================================================================
+ffmpeg-python==0.2.0  # Spleeter 2.3.0 requires exactly this version
+
+# ============================================================================
+# Optional Dependencies
+# ============================================================================
+# Uncomment for YouTube support:
+# yt-dlp>=2024.1.0
+
+# ============================================================================
+# Installation Note
+# ============================================================================
+# For GPU support (NVIDIA CUDA 11.8):
+# pip install torch==1.13.1+cu118 torchaudio==0.13.1+cu118 -f https://download.pytorch.org/whl/torch_stable.html
+# Or CPU-only: standard pip install works above
