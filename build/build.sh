@@ -47,11 +47,13 @@ if [ $# -eq 0 ]; then
     echo "  ./build.sh 0.2.0   - FFMPEG Cleanup & Optimization"
     echo "  ./build.sh 0.3.3   - Enhanced Edition (Harmonic Rejection)"
     echo "  ./build.sh 0.3.4   - YouTube Edition"
-    echo "  ./build.sh 0.4.0   - DEMUCS Natural Vocals"
-    echo "  ./build.sh 0.4.1   - DEMUCS/Spleeter Hybrid (Current)"
+    echo "  ./build.sh 0.4.1   - DEMUCS only (chunked, early prototype)"
+    echo "  ./build.sh 0.4.2   - DEMUCS + Spleeter (chunked, INT8, full DSP)"
+    echo "  ./build.sh 0.4.3   - DEMUCS + Spleeter + MDX-Net (vocals-only MDX-Net)"
+    echo "  ./build.sh 0.5.0   - CPU Streaming Edition (Current)"
     echo ""
     echo "Examples:"
-    echo "  ./build.sh 0.4.1"
+    echo "  ./build.sh 0.5.0"
     echo "  VENV_PATH=/path/to/venv ./build.sh 0.4.1"
     echo ""
     exit 1
@@ -66,12 +68,12 @@ BUILD_DIR="build/output_v${VERSION}"
 
 # Verify input is valid
 case $VERSION in
-    0.0.1|0.0.2|0.1.0|0.2.0|0.3.3|0.3.4|0.4.0|0.4.1)
+    0.0.1|0.0.2|0.1.0|0.2.0|0.3.3|0.3.4|0.4.1|0.4.2|0.4.3|0.5.0)
         # Valid version
         ;;
     *)
         echo -e "${RED}ERROR: Invalid version '${VERSION}'${NC}"
-        echo "Valid versions: 0.0.1, 0.0.2, 0.1.0, 0.2.0, 0.3.3, 0.3.4, 0.4.0, 0.4.1"
+        echo "Valid versions: 0.0.1, 0.0.2, 0.1.0, 0.2.0, 0.3.3, 0.3.4, 0.4.1, 0.4.2, 0.4.3, 0.5.0"
         exit 1
         ;;
 esac
@@ -198,9 +200,29 @@ if [ -f "$executable_path" ]; then
             echo ""
             ;;
         0.4.1)
-            echo "Version 0.4.1: DEMUCS/Spleeter Hybrid (Current)"
-            echo "Uses: DEMUCS neural separation + Spleeter fallback"
-            echo "Features: Advanced pre/post-filtering, 3 processing modes"
+            echo "Version 0.4.1: DEMUCS only (early prototype)"
+            echo "Uses: DEMUCS chunked async processing, torchaudio pipeline"
+            echo ""
+            ;;
+        0.4.2)
+            echo "Version 0.4.2: DEMUCS + Spleeter (chunked)"
+            echo "Uses: DEMUCS + Spleeter 4-stems, INT8 quantisation, model cache"
+            echo "Fix: Pre-chunked waveform (60s) — htdemucs_ft/mdx_extra no longer OOM"
+            echo ""
+            ;;
+        0.4.3)
+            echo "Version 0.4.3: DEMUCS + Spleeter + MDX-Net (Current)"
+            echo "Uses: MDX-Net (UVR) vocals-only models via audio-separator (onnxruntime)"
+            echo "Features: UVR-MDX-NET-Voc_FT + Kim_Vocal_2, fast on CPU, auto-download"
+            echo "Requires: Python 3.9+ venv (audio-separator constraint)"
+            echo "Install deps: pip install -r requirements/requirements_mdxnet_only.txt"
+            echo ""
+            ;;
+        0.5.0)
+            echo "Version 0.5.0: CPU Streaming Edition (Current)"
+            echo "Uses: DEMUCS only (no TensorFlow) — htdemucs/htdemucs_ft/mdx_extra"
+            echo "Features: Model cache, 60 s outer chunks, INT8 quantisation, ETA"
+            echo "Bundle savings: ~1.5 GB smaller (no Spleeter/TF)"
             echo ""
             ;;
     esac
@@ -245,7 +267,9 @@ Description: Music-Assassin v${VERSION}
 EOF
 
     DEB_OUT="$BUILD_DIR/dist/MusicAssassin_v${VERSION}.deb"
-    dpkg-deb --build "$DEB_ROOT" "$DEB_OUT"
+    # Use -Znone: the binary is already UPX-compressed; recompressing a 3+ GB
+    # file with zstd (dpkg 1.21+ default) silently produces a broken archive.
+    fakeroot dpkg-deb --build -Znone "$DEB_ROOT" "$DEB_OUT"
 
     if [ $? -eq 0 ]; then
         deb_size=$(du -h "$DEB_OUT" | cut -f1)
