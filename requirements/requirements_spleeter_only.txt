@@ -1,0 +1,33 @@
+# Music-Assassin v0.4.1 - Lightweight Spleeter Only
+# For users who want minimal dependencies and don't need DEMUCS
+# Significantly smaller download and setup time
+
+# ============================================================================
+# Audio Processing (Spleeter only)
+# ============================================================================
+spleeter==2.3.0
+
+# ============================================================================
+# Core Dependencies
+# ============================================================================
+numpy>=1.24.0
+scipy>=1.10.0
+scikit-image>=0.20.0
+librosa>=0.10.0
+
+# ============================================================================
+# Audio/Video Processing
+# ============================================================================
+ffmpeg-python>=0.2.1
+
+# ============================================================================
+# Optional: YouTube Support
+# ============================================================================
+# yt-dlp>=2024.1.0  # Uncomment for YouTube URL support
+
+# ============================================================================
+# Notes
+# ============================================================================
+# - Spleeter requires TensorFlow but will be auto-installed as dependency
+# - This setup is ~500MB smaller than DEMUCS variant
+# - Processing will be faster but with 4-stems instead of neural separation

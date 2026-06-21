@@ -324,10 +324,10 @@ def demusic_list():
         root.after(1000, demusic_list)
     else:   
         i = 0
-        for file_todo in files:
+        while i+1 < len(files):
             print(f"File {i+1}/{len(files)}")  
             do = 1      
-            files.pop(0)
+            file_todo = files.pop(0)
             listbox.delete(0)
             inprogress = Label( inprogressframe, text=file_todo, font = "Verdana 6 italic", bg='white', anchor="w")
             inprogress.pack(side="top", expand=None, fill="x")
@@ -340,7 +340,7 @@ def demusic_list():
             i += 1
         do = 0
         print("\nReady to demusic...")
-        
+                
 def deAudio_list():
     global files
     global pbar
@@ -350,10 +350,10 @@ def deAudio_list():
         root.after(1000, deAudio_list)
     else:   
         i = 0
-        for file_todo in files:
+        while i+1 < len(files):
             print(f"File {i+1}/{len(files)}")  
             do = 1      
-            files.pop(0)
+            file_todo = files.pop(0)
             listbox.delete(0)
             inprogress = Label( inprogressframe, text=file_todo, font = "Verdana 6 italic", bg='white', anchor="w")
             inprogress.pack(side="top", expand=None, fill="x")

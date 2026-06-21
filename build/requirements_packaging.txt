@@ -1,0 +1,57 @@
+# Music-Assassin v0.4.1 - Packaging Requirements
+# Tools needed to build executable from Python source
+# Use this AFTER installing requirements.txt in your environment
+
+# ============================================================================
+# PyInstaller - Primary tool for creating executables
+# ============================================================================
+pyinstaller>=6.0.0
+
+# ============================================================================
+# Build System & Distribution Tools
+# ============================================================================
+setuptools>=65.0.0
+wheel>=0.40.0
+
+# ============================================================================
+# Optional: Windows/Installer Creation
+# ============================================================================
+# For creating Windows MSI installers (Windows only):
+# pip install cx_Freeze>=6.15.0
+# 
+# For creating professional installers with wizard UI:
+# Download Inno Setup from: https://jrsoftware.org/isdl.php
+
+# ============================================================================
+# Optional: Code Signing (Windows)
+# ============================================================================
+# For code signing executables (optional, requires certificate):
+# pip install signcode
+
+# ============================================================================
+# Optional: macOS/Universal Binaries
+# ============================================================================
+# For building macOS universal binaries (macOS only):
+# pip install py2app
+
+# ============================================================================
+# Development Tools (optional)
+# ============================================================================
+# For analyzing dependencies and debugging:
+# pip install pipdeptree
+
+# ============================================================================
+# Installation Instructions
+# ============================================================================
+# 1. First install main dependencies:
+#    pip install -r requirements.txt
+#
+# 2. Then install packaging tools:
+#    pip install -r requirements_packaging.txt
+#
+# 3. Run build command (see PACKAGING_MANUAL.md for details):
+#    pyinstaller MusicAssassin.spec
+#
+# 4. Find your executable in:
+#    dist/MusicAssassin_v0.4.1.exe  (Windows)
+#    dist/MusicAssassin_v0.4.1      (Linux)

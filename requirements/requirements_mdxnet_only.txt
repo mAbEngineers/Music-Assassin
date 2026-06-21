@@ -1,0 +1,33 @@
+# Music-Assassin v0.4.4 - MDX-Net Only
+# Lightest path to high-quality VOCALS-ONLY output.
+# MDX-Net (UVR) vocal models run on onnxruntime — fast on CPU, ~66-130 MB each.
+# No TensorFlow/Spleeter, no Demucs required.
+
+# ============================================================================
+# Audio Separation (MDX-Net via audio-separator)
+# ============================================================================
+audio-separator>=0.17   # Wraps MDX-Net/MDXC/RoFormer/Demucs/VR; auto-downloads weights
+onnxruntime>=1.17       # CPU inference backend
+
+# ============================================================================
+# Core Dependencies
+# ============================================================================
+numpy>=1.24.0
+scipy>=1.10.0
+soundfile>=0.12.1       # temp WAV I/O between pipeline and audio-separator
+librosa>=0.10.0
+
+# ============================================================================
+# Audio/Video Processing
+# ============================================================================
+ffmpeg-python>=0.2.1
+
+# ============================================================================
+# Notes
+# ============================================================================
+# - Recommended vocal models (set in the GUI dropdown):
+#     UVR-MDX-NET-Voc_FT.onnx  — fast, ~66 MB  (default)
+#     Kim_Vocal_2.onnx         — best CPU quality, ~130 MB
+# - Models download automatically on first use.
+# - For GPU: replace onnxruntime with onnxruntime-gpu (CUDA).
+# - List all available models: `audio-separator --list_models`
