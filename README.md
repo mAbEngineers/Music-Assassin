@@ -1,272 +1,185 @@
 # Music-Assassin
-Removes music from long audio and video files.
+Removes music from long audio and video files using AI source separation.
 
-## Download Desktop app
-- Latest v0.4.1 (source code, requires Python installation)
-- Previous: v0.3.4 (YouTube support - experimental)
-- Older: v0.3.3 https://github.com/yoake/Music-Assassin/releases/tag/v0.3.3
+## Download / Run
 
-## Latest Version: v0.4.1 DEMUCS/Spleeter Hybrid
+- **Latest**: v0.4.3 (Demucs + Spleeter + MDX-Net) — requires Python 3.9+
+- **Stable**: v0.4.2 (Demucs + Spleeter) — requires Python 3.11 (Spleeter < 3.12)
+- **Legacy**: v0.4.1 (Demucs only, early prototype)
 
-**New in v0.4.1**:
-- **Dual separator support**: Choose DEMUCS (natural vocals) or Spleeter (4-stems)
-- **Advanced pre-filtering**: Noise gate + high-pass filter + normalize
-- **Advanced post-filtering**: Harmonic rejection + de-esser + formant enhancement
-- **3 processing modes**: Normal/Balanced/Aggressive with intelligent filtering
-- **Superior vocal quality**: DEMUCS neural network + complementary DSP chains
-- **Auto-detection**: Gracefully switches between separators based on installation
+## Latest Version: v0.4.3 — Demucs + Spleeter + MDX-Net
 
-**Key Improvements**:
-- DEMUCS gives more natural vocals (no robotic sound)
-- Spleeter fallback for compatibility
-- Enhanced pre-filtering removes 60% more background noise
-- Post-filtering chains optimized for each mode
+**New in v0.4.3**:
+- **MDX-Net vocal models** via `audio-separator` (UVR-MDX-NET-Voc_FT · Kim_Vocal_2)
+  - Vocals-only specialists: cleaner separation than general 4-stem models
+  - Runs on onnxruntime (CPU) — fast, ~66–130 MB vs 600 MB for mdx_extra
+  - Auto-downloads weights on first use
+- **All models now pre-chunk** the waveform (60s + 2s overlap) before processing
+  - Prevents OOM on long files for all models including htdemucs_ft / mdx_extra (4-model bags)
+  - Spleeter no longer loads the whole file into TensorFlow at once
+
+**Inherited from v0.4.2**:
+- Demucs + Spleeter dual-separator with model cache and INT8 quantisation
+- 3 processing modes: Normal / Balanced / Aggressive
+- Advanced pre/post-filtering (noise gate, harmonic rejection, de-esser, formant boost)
 
 ### Features
 
-| Source separator selection | DEMUCS or Spleeter (v0.4.1+) |
-| YouTube URL download | Experimental (v0.3.4) |
-| DEMUCS neural source separation | Supported (v0.4.1+) |
-| Spleeter 4-stems separation | Supported |
-| Audio formats (MP3, WAV, FLAC, M4A, AAC, OGG, OPUS, WMA, AIFF, ALAC) | Supported |
-| Video formats (MP4, MKV, AVI, MOV, WEBM, WMV, FLV) | Supported |
-| Subtitle preservation | Supported |
-| Advanced pre-filtering (gate + high-pass) | Supported (v0.4.1+) |
-| Advanced post-filtering (harmonic rejection) | Supported (v0.4.1+) |
-| Video stream passthrough (no re-encoding) | Supported |
-| Batch file processing with queue | Supported |
-| 3 processing modes (Normal/Balanced/Aggressive) | Supported |
-| Chunked processing (low memory) | Supported |
+| Feature | Status |
+|---|---|
+| MDX-Net vocals-only separation (UVR) | v0.4.3+ |
+| DEMUCS neural source separation | v0.4.1+ |
+| Spleeter 4-stems separation | v0.4.2+ |
+| Pre-chunked processing (60s, bounded RAM) | v0.4.2+ |
+| INT8 quantisation (htdemucs, 2-3x faster) | v0.4.2+ |
+| Session model cache (no reload per file) | v0.4.2+ |
+| 3 processing modes (Normal/Balanced/Aggressive) | v0.3.2+ |
+| Advanced pre-filtering (gate + high-pass) | v0.4.2+ |
+| Advanced post-filtering (harmonic rejection) | v0.3.2+ |
+| Audio formats (MP3, WAV, FLAC, M4A, AAC, OGG, OPUS, WMA) | All versions |
+| Video formats (MP4, MKV, AVI, MOV, WEBM, WMV, FLV) | v0.1.0+ |
+| Subtitle preservation | v0.3.0+ |
+| Video stream passthrough (no re-encoding) | v0.3.0+ |
+| Batch file processing with queue | All versions |
 
 ## Installation & Usage
 
-**Requirements**: Python 3.8+, FFmpeg, ~200MB RAM, DEMUCS or Spleeter
+### v0.4.3 (Demucs + Spleeter + MDX-Net) — Python 3.11 required
 
-**Installation (with DEMUCS - recommended)**:
+Spleeter requires Python < 3.12, and audio-separator requires Python 3.9+, so Python 3.11 is the sweet spot.
+
 ```bash
 git clone https://github.com/yoake/Music-Assassin.git
 cd Music-Assassin
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt  # Includes torch, torchaudio, demucs
+
+# Create Python 3.11 venv (uv recommended)
+uv python install 3.11
+uv venv $HOME/.venvs/music-assassin --python 3.11
+source $HOME/.venvs/music-assassin/bin/activate
+
+# Install all separators
+pip install audio-separator onnxruntime soundfile   # MDX-Net
+pip install demucs torch torchaudio                 # Demucs
+pip install spleeter==2.4.2 tensorflow==2.14.0      # Spleeter
+
+python MusicAssassinGUI_v0.4.3.py
+```
+
+### v0.4.2 (Demucs + Spleeter) — Python 3.8–3.11
+
+```bash
+source venv/bin/activate   # Python 3.8–3.11
+pip install -r requirements/requirements_pinned.txt
+python MusicAssassinGUI_v0.4.2.py
+```
+
+### v0.4.1 (Demucs only) — Python 3.8+
+
+```bash
+pip install demucs torch torchaudio
 python MusicAssassinGUI_v0.4.1.py
 ```
 
-**Or install Spleeter only** (lighter):
-```bash
-pip install spleeter==2.3.0
-python MusicAssassinGUI_v0.4.1.py  # Auto-detects available separators
-```
+### Basic Usage
 
-**Basic Usage**:
-1. Launch application v0.4.1
-2. Select separator: DEMUCS (recommended) or Spleeter
-3. Click "Browse Files" to add audio/video files
-4. Select processing mode (Normal/Balanced/Aggressive)
-5. Click "Start Processing" 
-6. Output saved as `{filename}-vocals.{extension}` in same folder
+1. Launch the application
+2. Select separator from the dropdown (MDX-Net recommended for clean vocals)
+3. Click **Browse Files** to add audio/video files
+4. Select processing mode (Balanced recommended)
+5. Click **Start Processing**
+6. Output saved as `{filename}-vocals.{extension}` in the same folder
 
-**Pro Tips**:
-- DEMUCS: Best for natural vocal quality (requires torch/GPU optional)
-- Spleeter: Faster, lightweight alternative
-- Balanced mode: Recommended for most content
-- Aggressive mode: For heavy instrumental/music backgrounds
+**Model guide**:
+- **MDX-Net Voc_FT** — fastest, ~66 MB, excellent vocals-only (best default)
+- **MDX-Net Kim_v2** — slightly higher quality, ~130 MB, still fast on CPU
+- **DEMUCS htdemucs** — fast, natural-sounding, general 4-stem
+- **DEMUCS htdemucs_ft / mdx_extra** — higher quality, more RAM, slower
+- **Spleeter** — legacy fallback, fastest to load, lower quality
 
 ---
 
-## Versions History
+## Version History
 
-### Version 0.0.1
-- Uses Moviepy to import video or audio by functions VideoFileClip() or AudioFileClip()
-- Uses tosoundarray() function of moviepy to convert sound track to numpy array
-- Splits numpy array into 1 minute sections. As spleeter has a max limit of minutes or size of file it can process depending on your RAM. 1 minute was chosen as it does not 
-- .separate() function of spleeter is used and just the filterd vocals are saved in a new array
-- AudioArrayClip() fuction of moviepy is used to convert the (filtered vocals) numpy array back to audio
-- .write_videofile() or .write_audiofile() is used export the filtered video/audio
+### v0.4.3 — Demucs + Spleeter + MDX-Net (Current)
+- MDX-Net vocal specialist models (UVR) via audio-separator + onnxruntime
+- All three separators chunked: 60s + 2s overlap, overlap-add
+- Chunked progress bar with per-chunk ETA
+- Requires Python 3.9+, best on Python 3.11
 
--- The filtering process is very slow and progress of process cannot be observed 
+### v0.4.2 — Demucs + Spleeter (chunked)
+- **FIX**: Demucs pre-chunks waveform before tensor creation — htdemucs_ft / mdx_extra (4-model bags) no longer OOM on long files
+- **FIX**: Spleeter pre-chunks waveform — TF tensor expansion stays bounded
+- INT8 dynamic quantisation (htdemucs, ~2-3x CPU speedup)
+- Session model cache — weights loaded once per session
+- Global post-filter normalisation (no more static at end)
+- Tail fade-out on Demucs output
 
-### Version 0.0.2
-- Same working as previous version
-- Has a Logger() that displays the progress of the process
+### v0.4.1 — Demucs only (early prototype)
+- DEMUCS v4 async chunked processing (30s chunks)
+- Basic vocal enhancement chain (de-esser, compressor, saturation, normalise)
+- Simple GUI with mode selection (Premium / Fast / UltraLow RAM)
 
--- Moviepy is very slow in exporting the video/audio
--- Moviepy uses FFMPEG at backend but is much slower than it
+### v0.3.4 — YouTube Edition (experimental)
+- Direct YouTube URL download + process via yt-dlp
+- All features of v0.3.3
 
-### Version 0.1.0
-- Uses FFMPEG instead of moviepy to import video or audio by function ffmpeg.input()
-- Uses .output('pipe:1', format='f32le', ac=1, ar=sample_rate) of ffmpeg to convert sound track to buffer. The output is piped and saved in a variable.
-- Uses np.frombuffer(out, dtype='<f4') function of numpy to convert buffer to numpy array
-- The filtering of the numpy array by spleeter is done by the same method as in the previous versions
-- astype('<f4').tobytes() fuction of numpy is used to convert the (filtered vocals) numpy array to byte array
-- ffmpeg.input('pipe:0', format='f32le', ar=sample_rate) function of ffmpeg is used to convert byte array to sound track
-- .output() of ffmpeg is used join the video and audio, and then export it.
+### v0.3.3 — Enhanced DSP Edition
+- Harmonic rejection for piano/violin/guitar (75% residue reduction)
+- Notch filters: instrument fundamentals 82–440 Hz
+- Chunked post-processing: 30s chunks, 60% lower peak memory
+- Modern dark UI, 3 processing modes
 
--- Spawning of GUI when seperator() of spleeter is used in the Desktop App
--- When GUI is closed it shows error in the Desktop App
+### v0.3.2
+- Spleeter 4-stems, 20s chunked processing, 3 modes
+- Real-time progress bar
 
-### Version 0.1.1
-- Similar working as previous version 
-- Extra samples added at both sides of each 1 minute section before sending to spleeter and removed later to increase accuracy of filtering
-- Added Remove Audio option that uses ffmpeg 
-- Resolved error when GUI is closed by using root.protocol("WM_DELETE_WINDOW", on_closing) of Tkinter
-- Used for loop to make it possible to select many files at the same time
+### v0.3.0 – v0.3.1
+- FFprobe stream detection, multi-audio-track support, queue management
 
-### Version 0.1.2
-- Similar working as previous version 
-- Uses Progressbar() of tkinter.ttk to show progress of process
-- Uses lesser memory as code cleaned
-- Compiled ffmpeg processes into a single function to reduce cluter
-- Kills ffmpeg processes on closing
+### v0.2.x
+- Spleeter 2-stem, spawn fix, reduced imports, audio output fix
 
--- Spawning error not resolved yet
+### v0.1.x
+- FFmpeg pipeline (replaced MoviePy), progress bar, sample padding
 
-### Version 0.2.0
-- Similar working as previous version 
-- Spawning error partially resolved using solution at https://github.com/deezer/spleeter/issues/725
-- Uses lesser memory as code cleaned
-  
-### Version 0.2.1
-- Similar working as previous version 
-- Code rearranged to decrease startup time
-- Queue is properly maintained and videos can be added during processing
+### v0.0.1 – v0.0.2
+- Initial MoviePy + Spleeter proof of concept, progress logging
 
--- No output for audio
+---
 
-### Version 0.2.2
-- Similar working as previous version 
-- Imports reduced to decrease startup time
-- Typo corrected so audio output working now
-  
--- Spawns in only first loop and it closes them itself
--- No output for mkv
+## Requirements
 
-### Version 0.3.0
-- Functions reshuffled to decrease startup time
-- Needed to download ffprobe.exe and move to folder that contains python.exe
-- Used ffprobe to check if file has an audio, video or subtitle track using solution at https://github.com/kkroening/ffmpeg-python/issues/204
-- mkv's output correctly with 1st subtitle track and 1st audio track
-- on close function updated to return printing to default stdout
-  
--- Spawns in only first loop and it closes them itself
--- Only handles the first audio track (the rest are omitted)
+| Version | Python | Key deps |
+|---|---|---|
+| v0.4.3 | 3.9–3.11 | audio-separator, onnxruntime, demucs, torch, spleeter==2.4.2, tensorflow==2.14 |
+| v0.4.2 | 3.8–3.11 | demucs, torch, spleeter==2.4.2, tensorflow==2.14 |
+| v0.4.1 | 3.8+ | demucs, torch, torchaudio |
+| v0.3.x | 3.8+ | spleeter==2.3.0, scipy, librosa |
 
-### Version 0.3.1
-- Improved stream detection and handling
-- Better support for multiple audio tracks in video files
-- Enhanced queue management with improved file validation
-- Added support for more video codecs and containers
-- Better error messages for unsupported formats
-- Optimized FFmpeg parameter handling
+All versions require **FFmpeg** (system package, not pip).
 
--- Minor issues with some MKV files with multiple audio tracks
--- Processing could be faster for large files
-
-### Version 0.3.2
-- Introduced memory optimization through chunked processing
-- 20-second chunks with 2-second overlap for seamless reconstruction
-- Implemented Spleeter 4-stems for better music isolation
-- Added 3 processing modes: Normal, Balanced, Aggressive
-- Real-time progress bar showing chunk completion
-- Better subtitle extraction and preservation
-- Significant speed improvements (30-40% faster than v0.3.1)
-- Peak memory reduced to ~180MB
-
-**Audio Quality Improvements**:
-- Better vocal extraction with 4-stems separation
-- Reduced artifacts compared to previous versions
-- Improved harmonic suppression
-- Better handling of complex musical arrangements
-
--- Formant enhancement could add back some music residue
--- Piano/violin/guitar not fully removed in some cases
-
-### Version 0.3.3 - Enhanced Edition
-- Modern UI redesign with dark header and real-time feedback
-- Enhanced audio filtering: harmonic rejection for piano/violin/guitar (75% residue reduction)
-- Chunked post-processing: 30s chunks with overlap (60% lower peak memory)
-- Three optimized modes: Normal, Balanced (default), Aggressive
-- File-by-file status tracking and queue completion summary
-- Notch filters target instrument fundamentals (82-440Hz)
-- Better formant preservation (vocals only, 700-3200Hz) with improved spectral analysis
-- Peak memory: ~150-180MB | Processing: ~90s per 10min audio
-- All formats supported (MP3, WAV, FLAC, MP4, MKV, AVI, etc.) with subtitles
-- YouTube support added in v0.3.4
-
-### Version 0.3.4 - YouTube Edition (EXPERIMENTAL)
-- Direct YouTube URL download and processing support
-- Paste YouTube link and automatically download + remove music
-- Download management with saved file tracking
-- Integrated with all audio/video processing modes
-- All features from v0.3.3 plus YouTube capability
-- Requires yt-dlp: pip install yt-dlp
-
--- YouTube format availability varies by region/age-restriction
--- Some videos may have restricted format availability
-
-### Version 0.4.0 - DEMUCS Edition
-- Uses DEMUCS v4 for superior vocal quality (natural sound, no robotic artifacts)
-- Chunked processing with memory efficiency
-- Multiple quality modes (Premium/Fast/UltraLow RAM)
-- Simple GUI with file queue and mode selection
-- Video stream passthrough (no re-encoding)
-
--- Some videos may require conversion formatting
--- Limited post-processing compared to Spleeter mode
-
-### Version 0.4.1 - DEMUCS/Spleeter Hybrid (CURRENT)
-- Dual separator support: Choose DEMUCS (natural vocals) or Spleeter (4-stems)
-- Advanced pre-filtering: Noise gate + high-pass filter + normalize
-- Advanced post-filtering: Harmonic rejection + de-esser + formant boost
-- Intelligent mode switching: Auto-detects installed separators
-- DEMUCS for superior vocal quality with neural network
-- Spleeter fallback for compatibility and speed
-- 3 enhanced processing modes: Normal/Balanced/Aggressive
-- Real-time status and progress tracking
-- Chunked processing for low memory usage (<180MB peak)
-- Modern dark UI with separator selection dropdown
-- All features from v0.3.3 with superior separation quality
-
-**Audio Processing Pipeline**:
-- Pre-filtering: -40dB noise gate, 40Hz high-pass, normalization
-- Source separation: DEMUCS neural network or Spleeter 4-stems
-- Post-filtering: Harmonic notches (82-440Hz), de-esser, formant enhancement
-- Memory: ~150-180MB peak | Speed: ~90s per 10min audio
-
+See `requirements/` for pinned and per-version files.
 
 ---
 
 ## Contributing
 
-Feedback and contributions are welcome! Areas for improvement: GPU acceleration, custom frequency targets, audio preview tool, additional processing algorithms
-
----
-
-## License
-
-This project builds on the Spleeter source separation model by Deezer.
+Feedback and contributions welcome. Planned improvements:
+- GPU acceleration toggle
+- Optional vocal-denoise stage (DeepFilterNet)
+- SCNet / RoFormer models for higher-quality separation (GPU tier)
+- OOPS centre-channel extraction for stereo fast-path
 
 ---
 
 ## Acknowledgments
 
-- **Spleeter**: Deezer's music source separation model
-- **FFmpeg**: Video/audio processing
-- **SciPy**: Digital signal processing filters
-- **Community feedback**: Helping improve the tool
+- **Demucs** — Meta Research
+- **Spleeter** — Deezer Research
+- **audio-separator / UVR** — NomadKaraoke / Anjok07
+- **FFmpeg** — Video/audio processing
+- **SciPy** — Digital signal processing
 
 ---
 
-## Support
-
-For issues, suggestions, or feedback:
-1. For DEMUCS issues: Ensure torch/torchaudio installed (pip install "torch>=1.10.0" torchaudio>=0.10.0")
-2. For Spleeter issues: Install spleeter (pip install spleeter==2.3.0)
-3. Check the version history for known issues and solutions
-4. Review the processing log for error details
-5. Ensure all dependencies are installed correctly (pip install -r requirements.txt)
-6. Open an issue on GitHub with details about your setup
-
----
-
-*Music Assassin v0.4.1 - Hybrid DEMUCS/Spleeter with advanced filtering for clean vocal extraction*
+*Music Assassin v0.4.3 — Demucs + Spleeter + MDX-Net with chunked processing and advanced DSP*

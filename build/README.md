@@ -1,448 +1,213 @@
 # Music-Assassin Build System
-## Build Scripts and PyInstaller Configurations
 
-Quick links to version-specific build files and documentation.
+## Build Scripts and PyInstaller Configurations
 
 ---
 
-## 📦 What's Here
-
-This folder contains everything needed to build executables for any Music-Assassin version.
+## What's Here
 
 ```
 build/
-├── build.sh                          (macOS/Linux universal build script)
-├── build.bat                         (Windows universal build script)
-├── MusicAssassin_v0.0.1.spec        (Config for v0.0.1)
-├── MusicAssassin_v0.0.2.spec        (Config for v0.0.2)
-├── MusicAssassin_v0.3.3.spec        (Config for v0.3.3)
-├── MusicAssassin_v0.4.1.spec        (Config for v0.4.1)
-├── README.md                         (This file)
-└── output_v*/                        (Build outputs by version)
+├── build.sh / build.bat              (universal build scripts — macOS/Linux/Windows)
+├── setup.sh / setup.bat              (one-time environment setup)
+├── MusicAssassin_v0.0.1.spec
+├── MusicAssassin_v0.0.2.spec
+├── MusicAssassin_v0.1.0.spec
+├── MusicAssassin_v0.2.0.spec
+├── MusicAssassin_v0.3.3.spec
+├── MusicAssassin_v0.4.1.spec         (Demucs only)
+├── MusicAssassin_v0.4.2.spec         (Demucs + Spleeter)
+├── MusicAssassin_v0.5.0.spec
+├── runtime_hook_v0.4.1.py
+├── runtime_hook_v0.4.2.py
+├── runtime_hook_v0.5.0.py
+├── requirements_packaging.txt
+└── output_v*/                        (build outputs, gitignored)
 ```
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
+
+### Linux / macOS
+```bash
+chmod +x build/build.sh
+./build/build.sh 0.4.3
+```
 
 ### Windows
 ```batch
-build.bat 0.4.1
+build\build.bat 0.4.3
 ```
 
-### macOS/Linux
+### With a specific venv
 ```bash
-chmod +x build.sh
-./build.sh 0.4.1
-```
-
-### Result
-Executable created in: `build/output_v0.4.1/dist/MusicAssassin_v0.4.1`
-
----
-
-## 📋 Available Versions
-
-| Version | Command | Type | Status |
-|---------|---------|------|--------|
-| **0.0.1** | `./build.sh 0.0.1` | MoviePy era | Legacy |
-| **0.0.2** | `./build.sh 0.0.2` | MoviePy with logging | Legacy |
-| **0.1.0** | `./build.sh 0.1.0` | FFMPEG transition | Legacy |
-| **0.2.0** | `./build.sh 0.2.0` | FFMPEG cleanup | Legacy |
-| **0.3.3** | `./build.sh 0.3.3` | Enhanced (Harmonic Rejection) | Stable |
-| **0.4.1** | `./build.sh 0.4.1` | DEMUCS/Spleeter Hybrid | **Current** |
-
----
-
-## 📖 Using Build Scripts
-
-### Full syntax
-
-**macOS/Linux:**
-```bash
-./build.sh <version>
-```
-
-**Windows:**
-```batch
-build.bat <version>
-```
-
-### Examples
-
-Build different versions:
-```bash
-./build.sh 0.0.1   # MoviePy initial version
-./build.sh 0.0.2   # MoviePy with logger
-./build.sh 0.1.0   # FFMPEG transition
-./build.sh 0.2.0   # FFMPEG cleanup & optimization
-./build.sh 0.3.3   # Enhanced with YouTube
-./build.sh 0.4.1   # Latest DEMUCS/Spleeter
-```
-
-### What Happens
-
-1. ✅ Validates Python & FFmpeg
-2. ✅ Cleans old builds
-3. ✅ Runs PyInstaller with version-specific .spec
-4. ✅ Creates versioned output directory
-5. ✅ Verifies executable created
-6. ✅ Shows path and size
-
-### Output
-
-Each version gets its own directory:
-```
-build/output_v0.4.1/dist/MusicAssassin_v0.4.1         (macOS/Linux)
-build/output_v0.4.1/dist/MusicAssassin_v0.4.1.exe     (Windows)
+VENV_PATH=$HOME/.venvs/music-assassin ./build/build.sh 0.4.3
 ```
 
 ---
 
-## 🔧 .Spec Files Explained
+## Available Versions
 
-Each version has a PyInstaller spec file with specific configuration:
-
-### MusicAssassin_v0.0.1.spec
-- **Uses:** MoviePy, Spleeter 2.1.0
-- **Size:** ~500MB
-- **Legacy:** Early development version
-
-### MusicAssassin_v0.0.2.spec
-- **Uses:** MoviePy, Spleeter 2.1.0, Logger
-- **Size:** ~500MB
-- **Legacy:** Added progress logging
-
-### MusicAssassin_v0.3.3.spec
-- **Uses:** Spleeter 4-stems, DSP filtering, YouTube support
-- **Includes:** Harmonic rejection, notch filters, formant enhancement
-- **Size:** ~1.5GB
-- **Status:** Stable, production-ready
-
-### MusicAssassin_v0.4.1.spec (Latest)
-- **Uses:** DEMUCS (recommended) + Spleeter (fallback)
-- **Features:** Advanced pre/post-filtering, 3 processing modes
-- **Includes:** PyTorch, DEMUCS models, Spleeter, TensorFlow
-- **Size:** ~2-2.5GB
-- **Status:** Current, recommended
+| Version | Command | Separators | Python | Status |
+|---------|---------|------------|--------|--------|
+| 0.0.1 | `./build.sh 0.0.1` | MoviePy + Spleeter | 3.8+ | Legacy |
+| 0.0.2 | `./build.sh 0.0.2` | MoviePy + Spleeter | 3.8+ | Legacy |
+| 0.1.0 | `./build.sh 0.1.0` | FFmpeg + Spleeter | 3.8+ | Legacy |
+| 0.2.0 | `./build.sh 0.2.0` | FFmpeg + Spleeter | 3.8+ | Legacy |
+| 0.3.3 | `./build.sh 0.3.3` | Spleeter 4-stems + DSP | 3.8+ | Stable |
+| **0.4.1** | `./build.sh 0.4.1` | **Demucs only** | 3.8+ | Stable |
+| **0.4.2** | `./build.sh 0.4.2` | **Demucs + Spleeter** | 3.8–3.11 | Stable |
+| **0.4.3** | `./build.sh 0.4.3` | **Demucs + Spleeter + MDX-Net** | 3.9–3.11 | **Current** |
+| 0.5.0 | `./build.sh 0.5.0` | Demucs only (ONNX streaming) | 3.9+ | Experimental |
 
 ---
 
-## ⚙️ Prerequisites for All Versions
+## Environment Setup
 
-Required before building:
+### v0.4.3 (Current) — requires Python 3.11
 
-- ✅ **Python 3.6+** (macOS/Linux) or **3.8+** (all versions recommended)
-- ✅ **FFmpeg** (system package, not pip)
-- ✅ **5GB free disk space**
-- ✅ **Dependencies installed** (see requirements.txt)
+`audio-separator` requires Python 3.9+, Spleeter requires Python < 3.12.
+Python 3.11 is the compatible intersection.
 
-### Install Prerequisites
-
-**macOS:**
 ```bash
-brew install python ffmpeg
+# Run the setup script for guided instructions:
+./build/setup.sh
+
+# Or manually:
+uv python install 3.11
+uv venv $HOME/.venvs/music-assassin --python 3.11
+source $HOME/.venvs/music-assassin/bin/activate
+pip install audio-separator onnxruntime soundfile   # MDX-Net
+pip install demucs torch torchaudio                 # Demucs
+pip install spleeter==2.4.2 tensorflow==2.14.0      # Spleeter
+pip install -r requirements/requirements_packaging.txt  # PyInstaller etc.
 ```
 
-**Linux (Ubuntu/Debian):**
+### v0.4.2 — Python 3.8–3.11
+
 ```bash
-sudo apt-get install python3 ffmpeg
+source venv/bin/activate
+pip install -r requirements/requirements_pinned.txt
+pip install -r requirements/requirements_packaging.txt
 ```
 
-**Windows:**
-- Python: https://www.python.org
-- FFmpeg: https://ffmpeg.org/download.html
-  - Or: `choco install ffmpeg`
+### v0.4.1 — Python 3.8+
+
+```bash
+pip install demucs torch torchaudio pyinstaller
+```
 
 ---
 
-## 💾 Build Outputs
+## Spec File Notes
 
-After building, each version has:
+### v0.4.1 — Demucs only
+- Includes: PyTorch, torchaudio, Demucs
+- Size: ~1.5 GB
+- No TensorFlow / Spleeter
+
+### v0.4.2 — Demucs + Spleeter
+- Includes: PyTorch, Demucs, Spleeter, TensorFlow
+- Size: ~2–2.5 GB
+
+### v0.4.3 — Demucs + Spleeter + MDX-Net (Current)
+- Includes: PyTorch, Demucs, Spleeter, TensorFlow, onnxruntime, audio-separator
+- Size: ~2.5–3 GB
+- Note: MDX-Net model weights (~66–130 MB) download on first run, not bundled
+
+### v0.3.3 — Spleeter DSP
+- Includes: Spleeter, TensorFlow, SciPy
+- Size: ~1.5 GB
+
+---
+
+## Version Comparison
+
+| Feature | v0.4.1 | v0.4.2 | v0.4.3 |
+|---------|--------|--------|--------|
+| Demucs (htdemucs / ft / mdx_extra) | ✅ | ✅ | ✅ |
+| Spleeter 4-stems | ❌ | ✅ | ✅ |
+| MDX-Net vocals-only (UVR) | ❌ | ❌ | ✅ |
+| Pre-chunked separation (60s, bounded RAM) | — | ✅ | ✅ |
+| INT8 quantisation (htdemucs) | ❌ | ✅ | ✅ |
+| Session model cache | ❌ | ✅ | ✅ |
+| 3 DSP modes | ❌ | ✅ | ✅ |
+| Python requirement | 3.8+ | 3.8–3.11 | 3.9–3.11 |
+
+---
+
+## Build Output Structure
 
 ```
-build/output_v0.4.1/
+build/output_v0.4.3/
 ├── dist/
-│   ├── MusicAssassin_v0.4.1          (executable - macOS/Linux)
-│   ├── MusicAssassin_v0.4.1.exe      (executable - Windows)
-│   └── _internal/                    (support files - KEEP THIS!)
+│   ├── MusicAssassin_v0.4.3          (executable — Linux/macOS)
+│   ├── MusicAssassin_v0.4.3.exe      (executable — Windows)
+│   └── _internal/                    (bundled deps — do not delete)
 │       ├── demucs/
 │       ├── spleeter/
 │       ├── torch/
+│       ├── audio_separator/
 │       └── ...
-├── build/                            (temporary PyInstaller files)
-└── MusicAssassin_v0.4.1.spec        (copy of spec used)
-```
-
-**Important:** Don't delete `_internal/` folder - it's required!
-
----
-
-## 🎯 Version Comparison
-
-| Feature | v0.0.1 | v0.0.2 | v0.1.0 | v0.2.0 | v0.3.3 | v0.4.1 |
-|---------|--------|--------|--------|--------|--------|--------|
-| **Engine** | MoviePy | MoviePy | FFMPEG | FFMPEG | Spleeter | DEMUCS/Spleeter |
-| **Quality** | Basic | Basic | Basic | Basic | Good | Excellent |
-| **Size** | ~500MB | ~500MB | ~500MB | ~500MB | ~1.5GB | ~2GB |
-| **Speed** | Slow | Slow | Medium | Medium | Medium | Medium-Fast |
-| **YouTube** | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| **DSP Filters** | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |
-| **Modes** | 1 | 1 | 1 | 1 | 3 | 3 |
-| **Status** | Legacy | Legacy | Legacy | Legacy | Stable | **Current** |
-
----
-
-## 🛠️ Manual Build (Advanced)
-
-If you want to manually run PyInstaller:
-
-```bash
-# macOS/Linux
-pyinstaller build/MusicAssassin_v0.4.1.spec
-
-# Windows
-pyinstaller build\MusicAssassin_v0.4.1.spec
-```
-
-Or with custom output:
-
-```bash
-pyinstaller build/MusicAssassin_v0.4.1.spec \
-    --distpath build/output_v0.4.1/dist \
-    --buildpath build/output_v0.4.1/build
+└── build/                            (PyInstaller temp files)
 ```
 
 ---
 
-## 📊 Build Times
-
-Typical build times (first run):
+## Build Times
 
 | Step | Time |
 |------|------|
-| Install dependencies | 5-10 min |
+| Install dependencies | 5–15 min |
 | PyInstaller analysis | 5 min |
-| Bundle creation | 10-20 min |
-| Finalization | 3-5 min |
-| **Total** | **25-50 min** |
-
-Subsequent builds (cached): 15-25 minutes
+| Bundle creation | 15–25 min |
+| **Total** | **25–45 min** |
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
-### Build script won't run
-
-**macOS/Linux:**
+### Build script not executable
 ```bash
-chmod +x build.sh
-./build.sh 0.4.1
+chmod +x build/build.sh build/setup.sh
 ```
 
-**Windows:**
-- Run Command Prompt or PowerShell **as Administrator**
-- Then: `build.bat 0.4.1`
-
 ### "FFmpeg not found"
-
-Install FFmpeg:
-- **macOS:** `brew install ffmpeg`
-- **Linux:** `sudo apt-get install ffmpeg`
-- **Windows:** Download from https://ffmpeg.org/download.html
-
-### "Python not found"
-
-Install Python 3.8+:
-- **All:** https://www.python.org
-- **Windows:** Ensure "Add Python to PATH" is checked during install
-
-### Build hangs / freezes
-
-**Normal:** PyInstaller with PyTorch/TensorFlow takes 20-50 minutes
-
-If genuinely stuck (>2 hours):
 ```bash
-# Cancel build
-Ctrl+C
+# Ubuntu/Debian
+sudo apt-get install ffmpeg
+# macOS
+brew install ffmpeg
+```
 
-# Try again with clean slate
-rm -rf build/output_v0.4.1
-./build.sh 0.4.1
+### audio-separator / onnxruntime missing
+```bash
+pip install audio-separator onnxruntime soundfile
 ```
 
 ### Out of disk space
+Need 5 GB+ free. v0.4.3 bundle is ~2.5–3 GB.
 
-Need 5GB+ free. Check:
+### Build hangs > 2 hours
 ```bash
-df -h /          # macOS/Linux
-wmic logicaldisk get freespace  # Windows
+Ctrl+C
+rm -rf build/output_v0.4.3
+./build/build.sh 0.4.3
 ```
-
-### For more help
-See: [BUILD_TROUBLESHOOTING.md](../BUILD_TROUBLESHOOTING.md) (parent directory)
 
 ---
 
-## 📤 Distribution
-
-After successful build, distribute the executable:
-
-### Option 1: Standalone File
-Just share: `build/output_v0.4.1/dist/MusicAssassin_v0.4.1.exe`
-
-### Option 2: ZIP Archive
-```bash
-# macOS/Linux
-tar -czf Music-Assassin-v0.4.1.tar.gz build/output_v0.4.1/dist/
-
-# Windows
-Compress-Archive -Path build\output_v0.4.1\dist -DestinationPath Music-Assassin-v0.4.1.zip
-```
-
-### Option 3: Installer
-Use Inno Setup or similar (see parent BUILD_TROUBLESHOOTING.md)
-
----
-
-## 🔄 Building Multiple Versions
-
-Build several versions:
+## Distribution
 
 ```bash
-# macOS/Linux
-./build.sh 0.0.1
-./build.sh 0.3.3
-./build.sh 0.4.1
+# Tar archive (Linux/macOS)
+tar -czf Music-Assassin-v0.4.3.tar.gz build/output_v0.4.3/dist/
 
-# Windows
-build.bat 0.0.1
-build.bat 0.3.3
-build.bat 0.4.1
-```
-
-Each goes to its own directory:
-```
-build/output_v0.0.1/
-build/output_v0.3.3/
-build/output_v0.4.1/
+# Zip (Windows PowerShell)
+Compress-Archive -Path build\output_v0.4.3\dist -DestinationPath Music-Assassin-v0.4.3.zip
 ```
 
 ---
 
-## 📝 Version Info
-
-| Version | Release | Type | Features |
-|---------|---------|------|----------|
-| 0.0.1 | 2020 | MoviePy | Initial version |
-| 0.0.2 | 2020 | MoviePy | Logging support |
-| 0.3.3 | 2023 | Spleeter | Harmonic rejection, UI redesign, YouTube (exp.) |
-| 0.4.1 | 2024 | Hybrid | DEMUCS/Spleeter, advanced filtering (current) |
-
----
-
-## 🎓 Learning Path
-
-### Want to understand the build process?
-
-1. Run: `./build.sh 0.4.1`
-2. Watch output as PyInstaller bundles files
-3. Check `build/output_v0.4.1/dist/_internal/` to see bundled files
-4. Look at `MusicAssassin_v0.4.1.spec` to see configuration
-
-### Want to customize a build?
-
-1. Copy a .spec file: `cp MusicAssassin_v0.4.1.spec my_custom.spec`
-2. Edit with your changes
-3. Run PyInstaller: `pyinstaller my_custom.spec`
-
-### Want to add an icon?
-
-Edit the .spec file:
-```python
-exe = EXE(
-    ...
-    icon='path/to/icon.ico',  # Add your icon
-    ...
-)
-```
-
-Then rebuild.
-
----
-
-## 📚 Documentation
-
-Related files (parent directory):
-- [BUILD_QUICK_START.md](../BUILD_QUICK_START.md) - Quick start guide
-- [BUILD_TROUBLESHOOTING.md](../BUILD_TROUBLESHOOTING.md) - Problem solutions
-- [PACKAGING_MANUAL.md](../PACKAGING_MANUAL.md) - Detailed guide
-- [BUILD_INDEX.md](../BUILD_INDEX.md) - Documentation index
-
----
-
-## 💡 Tips & Tricks
-
-### Speed up subsequent builds
-```bash
-pip install -U --no-deps pyinstaller
-```
-
-### Check what's in _internal
-```bash
-ls -lR build/output_v0.4.1/dist/_internal/ | head -50
-```
-
-### Verify executable works before distributing
-```bash
-./build/output_v0.4.1/dist/MusicAssassin_v0.4.1
-
-# Or on Windows
-build\output_v0.4.1\dist\MusicAssassin_v0.4.1.exe
-```
-
-### Get file size
-```bash
-du -h build/output_v0.4.1/dist/MusicAssassin_v0.4.1
-# Or (Windows)
-powershell "Get-Item build\output_v0.4.1\dist\MusicAssassin_v0.4.1.exe | Select-Object -ExpandProperty Length"
-```
-
----
-
-## ❓ FAQ
-
-**Q: Why is the executable so large (~2GB)?**  
-A: PyTorch (~600MB) + TensorFlow (~500MB) + DEMUCS models (~300MB) + NumPy/SciPy + dependencies
-
-**Q: Can I reduce the size?**  
-A: Build v0.0.1 or v0.0.2 for smaller executables (~500MB), or v0.3.3 (~1.5GB)
-
-**Q: Do users need Python installed?**  
-A: No, the executable includes Python. Just need FFmpeg (system package).
-
-**Q: Can I build for a different OS?**  
-A: PyInstaller builds for the current OS. Run on Windows to build .exe, on macOS to build .app, etc.
-
-**Q: How do I add my custom code?**  
-A: Modify `MusicAssassinGUI_v0.4.1.py`, then rebuild.
-
----
-
-## 🚀 Ready?
-
-```bash
-# macOS/Linux
-chmod +x build.sh
-./build.sh 0.4.1
-
-# Windows
-build.bat 0.4.1
-```
-
-Your executable will be ready in ~30-50 minutes!
-
----
-
-*Music-Assassin v0.4.1 - Build System*
+*Music-Assassin Build System — v0.4.3 current*
