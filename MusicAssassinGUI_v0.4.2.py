@@ -1,25 +1,24 @@
 """
-Music Assassin Pro v0.4.2 - DEMUCS/SPLEETER HYBRID EDITION
-Advanced dual-source separation with intelligent pre/post-filtering
-+ Choose between DEMUCS (natural vocals) or Spleeter (4-stems)
+Music Assassin Pro v0.4.2 - MDX-NET / DEMUCS / SPLEETER EDITION
+Advanced triple-source separation with intelligent pre/post-filtering
++ Choose between MDX-Net (vocals-only, fast CPU), DEMUCS (natural) or Spleeter (4-stems)
 + 3 processing modes (Normal/Balanced/Aggressive)
 + Advanced pre-filtering (noise gate, high-pass)
 + Advanced post-filtering (de-esser, harmonic rejection, formant enhancement)
-+ Manual pre-chunked processing — bounded RAM for all model sizes
++ Optimized chunked processing (low memory usage)
 + Compact formal UI with real-time feedback
 
-v0.4.2 chunking fix (over v0.4.1):
-+ FIX: Demucs now pre-chunks waveform before tensor creation (60s + 2s overlap)
-  — htdemucs_ft / mdx_extra (4-model bags) no longer OOM on long files
-+ FIX: Spleeter now pre-chunks waveform (60s + 2s overlap)
-  — prevents TF tensor explosion (~400-800 MB per call) on long files
+v0.4.2 additions (over v0.4.1):
++ NEW: MDX-Net vocal models via audio-separator (UVR-MDX-NET-Voc_FT + Kim_Vocal_2)
+  - Vocals-only specialist: cleaner separation than general 4-stem models
+  - Runs on onnxruntime (CPU) — fast, ~66-130 MB vs 600 MB for mdx_extra
+  - Auto-downloads weights on first use (~66 MB or ~130 MB)
++ Requires Python 3.9+ (audio-separator constraint) — use assassin_venv_v044
 
-v0.4.1 improvements (inherited):
+v0.4.2 audio fixes (inherited):
 + FIX: global post-filter normalization (was per-chunk → caused static at end)
 + FIX: tail fade-out (last 0.5 s → silent) to remove demucs tail noise
-+ Model selection: htdemucs (fast) / htdemucs_ft (quality) / mdx_extra (best)
-+ Session model cache — weights load once, reused across the whole batch
-+ INT8 dynamic quantization (htdemucs only, CPU) — ~2-3x faster
++ FIX: last-chunk fade-to-zero padding to reduce model boundary artifacts
 """
 
 import os, sys, gc, time, logging
@@ -46,10 +45,13 @@ DEMUCS_AVAILABLE = (
     importlib.util.find_spec('demucs') is not None
 )
 SPLEETER_AVAILABLE = importlib.util.find_spec('spleeter') is not None
+AUDIO_SEPARATOR_AVAILABLE = importlib.util.find_spec('audio_separator') is not None
 if not DEMUCS_AVAILABLE:
     print("WARNING: DEMUCS not installed (torch/torchaudio). Spleeter only.")
 if not SPLEETER_AVAILABLE:
     print("WARNING: Spleeter not installed. DEMUCS only.")
+if not AUDIO_SEPARATOR_AVAILABLE:
+    print("WARNING: audio-separator not installed. MDX-Net models unavailable.")
 
 # ============================================================================
 # GLOBALS & CONFIG
@@ -62,8 +64,8 @@ b1 = b2 = f1 = a1 = listbox = inprogressframe = progress = status_label = mode_s
 root = None
 status_text = "Ready"
 processing_mode = "balanced"  # normal, balanced, aggressive
-separator_choice = "demucs"   # demucs or spleeter
-model_choice = "htdemucs"     # htdemucs (fast) | htdemucs_ft (quality) | mdx_extra (best)
+separator_choice = "demucs"   # demucs, spleeter, or audio_separator
+model_choice = "htdemucs"     # htdemucs | htdemucs_ft | mdx_extra | UVR-MDX-NET-Voc_FT.onnx | Kim_Vocal_2.onnx
 quantize_enabled = True       # INT8 dynamic quantization (htdemucs only, 2-3x faster on CPU)
 
 # Session model cache — key "name:quant" → loaded torch model.
@@ -89,9 +91,9 @@ logging.getLogger("urllib3").setLevel(logging.ERROR)
 logging.getLogger("torch").setLevel(logging.ERROR)
 
 _log.info("=" * 60)
-_log.info("Music Assassin v0.4.3  —  session start")
+_log.info("Music Assassin v0.4.2  —  session start")
 _log.info(f"Log file: {_LOG_PATH}")
-_log.info(f"DEMUCS available: {DEMUCS_AVAILABLE}  |  Spleeter: {SPLEETER_AVAILABLE}")
+_log.info(f"DEMUCS available: {DEMUCS_AVAILABLE}  |  Spleeter: {SPLEETER_AVAILABLE}  |  MDX-Net: {AUDIO_SEPARATOR_AVAILABLE}")
 
 
 class PrintLogger:
@@ -394,8 +396,9 @@ def separate_with_demucs(waveform, sr=44100):
 
     The waveform is split into CHUNK_SEC chunks BEFORE creating any tensor,
     so peak RAM stays bounded regardless of file length or model size.
-    htdemucs_ft and mdx_extra are both BagOfModels with 4 sub-models — without
-    this they OOM on long files because the whole-song tensor stays in RAM.
+    htdemucs_ft and mdx_extra are both BagOfModels with 4 sub-models — they
+    collapsed on long files because the whole-file tensor was in RAM the whole
+    time. Chunking fixes that: each chunk is processed and freed individually.
     """
     if not DEMUCS_AVAILABLE:
         print("ERROR: DEMUCS not available")
@@ -434,14 +437,17 @@ def separate_with_demucs(waveform, sr=44100):
                   f"{'  (INT8)' if (quantize_enabled and 'htdemucs' in model_choice) else ''}")
             print(f"  TIP: Install CUDA + PyTorch-GPU for 10-20x speedup.")
 
-        vocals_idx  = model.sources.index('vocals')
-        duration_s  = len(waveform) / sr
+        vocals_idx = model.sources.index('vocals')
+        duration_s = len(waveform) / sr
 
-        CHUNK_SEC    = 60
-        OVERLAP_SEC  = 2
-        chunk_samp   = int(CHUNK_SEC * sr)
+        # Manual pre-chunking — keeps peak RAM bounded for all model sizes.
+        # htdemucs_ft / mdx_extra are 4-model bags: without this they load the
+        # whole-song tensor × 4 sub-models simultaneously and OOM on low-RAM machines.
+        CHUNK_SEC   = 60
+        OVERLAP_SEC = 2
+        chunk_samp  = int(CHUNK_SEC * sr)
         overlap_samp = int(OVERLAP_SEC * sr)
-        step_samp    = chunk_samp - overlap_samp
+        step_samp   = chunk_samp - overlap_samp
 
         total_samp  = len(waveform)
         starts      = list(range(0, total_samp, step_samp))
@@ -483,9 +489,11 @@ def separate_with_demucs(waveform, sr=44100):
                     _err[0] = e
 
             chunk_dur = (end - start) / sr
+            update_status(f"DEMUCS: chunk {idx+1}/{n_chunks}  ({chunk_dur:.0f}s)...")
             thread = threading.Thread(target=_worker, daemon=True)
             thread.start()
 
+            # Animate progress while chunk processes
             est_chunk = chunk_dur * 0.75
             t_chunk = time.time()
             while thread.is_alive():
@@ -507,6 +515,7 @@ def separate_with_demucs(waveform, sr=44100):
             chunk_vocals = _result[0][0, vocals_idx].float().mean(0).cpu().numpy()
             del _result[0], t, stereo
 
+            # Overlap-add: crossfade the overlap region with the previous chunk
             if idx == 0:
                 vocals_out[start:end] = chunk_vocals
             else:
@@ -526,8 +535,10 @@ def separate_with_demucs(waveform, sr=44100):
 
         elapsed = time.time() - t0
         print(f"  Separation done in {elapsed:.1f}s ({elapsed/duration_s:.2f}× real-time)")
+
         if progress:
             progress['value'] = 100
+
         return vocals_out
 
     except Exception as e:
@@ -541,7 +552,7 @@ def separate_with_spleeter(waveform, sr=44100):
 
     Spleeter loads the entire waveform into TensorFlow at once and expands it
     to ~400-800 MB of tensors. Without chunking, long files OOM. We split into
-    60s chunks and overlap-add the vocals back.
+    60s chunks, run Spleeter on each, and overlap-add the vocals back.
     """
     if not SPLEETER_AVAILABLE:
         print("ERROR: Spleeter not available")
@@ -569,10 +580,10 @@ def separate_with_spleeter(waveform, sr=44100):
         overlap_samp = int(OVERLAP_SEC * sr)
         step_samp    = chunk_samp - overlap_samp
 
-        total_samp  = len(waveform)
-        starts      = list(range(0, total_samp, step_samp))
-        n_chunks    = len(starts)
-        vocals_out  = np.zeros(total_samp, dtype=np.float32)
+        total_samp   = len(waveform)
+        starts       = list(range(0, total_samp, step_samp))
+        n_chunks     = len(starts)
+        vocals_out   = np.zeros(total_samp, dtype=np.float32)
 
         duration_s = total_samp / sr
         print(f"  duration: {duration_s:.1f}s  |  chunks: {n_chunks} × {CHUNK_SEC}s  |  overlap: {OVERLAP_SEC}s")
@@ -584,6 +595,8 @@ def separate_with_spleeter(waveform, sr=44100):
         for idx, start in enumerate(starts):
             end   = min(start + chunk_samp, total_samp)
             chunk = waveform[start:end].reshape(-1, 1)
+
+            update_status(f"Spleeter: chunk {idx+1}/{n_chunks}...")
 
             _sep_result = [None]
 
@@ -618,6 +631,88 @@ def separate_with_spleeter(waveform, sr=44100):
     except Exception as e:
         print(f"Spleeter error: {e}")
         return None
+
+
+# Session cache for audio-separator Separator instances (one per model filename).
+_AUDIO_SEP_CACHE = {}
+
+def separate_with_audio_separator(waveform, sr=44100, mdl="UVR-MDX-NET-Voc_FT.onnx"):
+    """Vocal extraction using MDX-Net (UVR) models via audio-separator.
+
+    audio-separator operates on files, so we write a temp WAV, run inference,
+    then read the vocals output back — all in a background thread to keep the
+    UI responsive. The Separator instance is cached per model so batch runs
+    don't reload weights each time.
+    """
+    if not AUDIO_SEPARATOR_AVAILABLE:
+        print("ERROR: audio-separator not installed. Run: pip install audio-separator onnxruntime")
+        return None
+
+    import tempfile, glob, soundfile as sf
+    from audio_separator.separator import Separator
+
+    print(f"MDX-Net: model={mdl}")
+    update_status(f"MDX-Net: loading {mdl}...")
+
+    try:
+        # Write mono waveform to a temp WAV so audio-separator can read it
+        tmp_dir = tempfile.mkdtemp(prefix="music_assassin_")
+        tmp_in  = os.path.join(tmp_dir, "input.wav")
+        sf.write(tmp_in, waveform.astype(np.float32), sr)
+
+        # Load (or reuse cached) Separator
+        sep = _AUDIO_SEP_CACHE.get(mdl)
+        if sep is None:
+            sep = Separator(
+                output_dir=tmp_dir,
+                output_format="WAV",
+                normalization_threshold=0.9,
+                output_single_stem="Vocals",
+            )
+            sep.load_model(model_filename=mdl)
+            _AUDIO_SEP_CACHE[mdl] = sep
+            print(f"  MDX-Net model '{mdl}' loaded and cached")
+        else:
+            # Update output dir for this run (new tempdir each call)
+            sep.output_dir = tmp_dir
+            print(f"  MDX-Net model '{mdl}' reused from cache")
+
+        def _run_sep():
+            sep.separate(tmp_in)
+
+        _run_in_background(_run_sep, f"MDX-Net: separating...")
+
+        # audio-separator writes "input_(Vocals)_*.wav" into tmp_dir
+        vocals_files = glob.glob(os.path.join(tmp_dir, "*Vocals*"))
+        if not vocals_files:
+            print("ERROR: MDX-Net produced no vocals output file")
+            return None
+
+        vocals_audio, out_sr = sf.read(vocals_files[0], dtype='float32')
+        # Downmix to mono if stereo
+        if vocals_audio.ndim > 1:
+            vocals_audio = vocals_audio.mean(axis=1)
+
+        # Clean up temp files
+        for f in glob.glob(os.path.join(tmp_dir, "*")):
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+        try:
+            os.rmdir(tmp_dir)
+        except OSError:
+            pass
+
+        gc.collect()
+        print(f"  MDX-Net separation complete: {len(vocals_audio)} samples @ {out_sr} Hz")
+        return vocals_audio.astype(np.float32)
+
+    except Exception as e:
+        print(f"MDX-Net error: {e}")
+        import traceback; traceback.print_exc()
+        return None
+
 
 def check_streams(file_path):
     """Detect video/audio/subtitle streams. Returns (video, audio_streams, sub_count, duration_sec).
@@ -809,9 +904,17 @@ def _process_single_track(file_path, input_, track_idx, output_path, video, audi
 
     waveform = audio_prefilter(waveform, sample_rate)
 
-    if separator_choice == 'demucs' and DEMUCS_AVAILABLE:
+    if separator_choice == 'audio_separator' and AUDIO_SEPARATOR_AVAILABLE:
+        vocals = separate_with_audio_separator(waveform, sample_rate, model_choice)
+    elif separator_choice == 'demucs' and DEMUCS_AVAILABLE:
         vocals = separate_with_demucs(waveform, sample_rate)
-    elif separator_choice == 'spleeter' or not DEMUCS_AVAILABLE:
+    elif separator_choice == 'spleeter' and SPLEETER_AVAILABLE:
+        vocals = separate_with_spleeter(waveform, sample_rate)
+    elif DEMUCS_AVAILABLE:
+        print("WARNING: Falling back to DEMUCS")
+        vocals = separate_with_demucs(waveform, sample_rate)
+    elif SPLEETER_AVAILABLE:
+        print("WARNING: Falling back to Spleeter")
         vocals = separate_with_spleeter(waveform, sample_rate)
     else:
         print("No separator available")
@@ -985,9 +1088,9 @@ def setFrames(root):
 
     Label(title_row, text="Music Assassin Pro",
           font=("Segoe UI", 15, "bold"), bg='#0f0f1c', fg=TEXT).pack(side="left")
-    Label(title_row, text="v0.4.3",
+    Label(title_row, text="v0.4.2",
           font=("Segoe UI", 10), bg='#0f0f1c', fg=ACCENT).pack(side="left", padx=(6, 0), pady=4)
-    Label(title_row, text="DEMUCS / Spleeter  \u2022  Cached + INT8  \u2022  Advanced DSP",
+    Label(title_row, text="MDX-Net / DEMUCS / Spleeter  \u2022  Cached + INT8  \u2022  Advanced DSP",
           font=("Segoe UI", 8), bg='#0f0f1c', fg=MUTED).pack(side="right", pady=4)
 
     Frame(root, bg=ACCENT, height=2).pack(fill="x")
@@ -1002,6 +1105,9 @@ def setFrames(root):
     Label(sep_card, text="SEPARATOR / MODEL", font=("Segoe UI", 7, "bold"),
           bg=CARD, fg=MUTED).pack(anchor="w", padx=10, pady=(7, 2))
     sep_options = []
+    if AUDIO_SEPARATOR_AVAILABLE:
+        sep_options.append("MDX-Net Voc_FT   (Vocals · Fast · 66 MB)")
+        sep_options.append("MDX-Net Kim_v2   (Vocals · Best CPU · 130 MB)")
     if DEMUCS_AVAILABLE:
         sep_options.append("DEMUCS htdemucs  (Fast)")
         sep_options.append("DEMUCS htdemucs_ft  (Quality)")
@@ -1103,12 +1209,16 @@ def setFrames(root):
     sys.stdout = PrintLogger(log_widget)
 
 def set_separator():
-    """Update separator engine + DEMUCS model choice"""
+    """Update separator engine + model choice"""
     global separator_choice, model_choice
     sep = separator_selector.get()
-    if "DEMUCS" in sep:
+    if "MDX-Net" in sep:
+        separator_choice = "audio_separator"
+        model_choice = "UVR-MDX-NET-Voc_FT.onnx" if "Voc_FT" in sep else "Kim_Vocal_2.onnx"
+        update_status(f"MDX-Net: {model_choice}")
+        print(f"Separator: MDX-Net  |  model: {model_choice}")
+    elif "DEMUCS" in sep:
         separator_choice = "demucs"
-        # Second word of the label is the model name (htdemucs / htdemucs_ft / mdx_extra)
         model_choice = sep.split()[1]
         update_status(f"DEMUCS: {model_choice}")
         print(f"Separator: DEMUCS  |  model: {model_choice}")
@@ -1247,7 +1357,7 @@ def on_closing():
 
 if __name__ == "__main__":
     root = Tk()
-    root.wm_title("Music Assassin Pro v0.4.3")
+    root.wm_title("Music Assassin Pro v0.4.2")
     root.geometry("720x660")
     root.configure(background='#0d0d14')
     root.minsize(640, 560)
@@ -1259,7 +1369,7 @@ if __name__ == "__main__":
         os.environ['TK_LIBRARY'] = '/usr/share/tcltk/tk8.6'
         root.destroy()
         root = Tk()
-        root.wm_title("Music Assassin Pro v0.4.3")
+        root.wm_title("Music Assassin Pro v0.4.2")
         root.geometry("720x660")
         root.configure(background='#0d0d14')
         root.minsize(640, 560)
@@ -1273,8 +1383,9 @@ if __name__ == "__main__":
     a1.configure(command=lambda: [files.clear(), listbox.delete(0, 'end'), update_status("Queue cleared")])
 
     print("=" * 55)
-    print("Music Assassin Pro v0.4.3 - DEMUCS/SPLEETER HYBRID")
+    print("Music Assassin Pro v0.4.2 - MDX-Net/DEMUCS/SPLEETER")
     print("=" * 55)
+    print(f"MDX-Net available:   {AUDIO_SEPARATOR_AVAILABLE}")
     print(f"DEMUCS available:    {DEMUCS_AVAILABLE}")
     print(f"Spleeter available:  {SPLEETER_AVAILABLE}")
     print(f"CPU cores:           {os.cpu_count()}")
