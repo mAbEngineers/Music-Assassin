@@ -48,7 +48,7 @@ if "%1"=="" (
 )
 
 set VERSION=%1
-set EXECUTABLE_FILE=MusicAssassinGUI_v%VERSION%.py
+set EXECUTABLE_FILE=versions\MusicAssassinGUI_v%VERSION%.py
 set SPEC_FILE=build\MusicAssassin_v%VERSION%.spec
 set BUILD_DIR=build\output_v%VERSION%
 

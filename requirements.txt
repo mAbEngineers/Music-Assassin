@@ -1,59 +1,40 @@
-# Music-Assassin v0.4.1 - Main Requirements
-# DEMUCS/Spleeter Hybrid with Advanced Filtering
-# Python: 3.8.7 (tested) | 3.8-3.9 compatible
+# Music Assassin v0.4.4 Requirements
+# Python 3.12 (tested on assassin_venv_v0.4.2)
+# Install: pip install -r requirements.txt
+# See setup_v044.sh for model file downloads
 
-# ============================================================================
-# Primary Audio Separation Engines
-# ============================================================================
-demucs>=3.0.0,<4.0     # Neural network separation (Python 3.8 compatible)
-spleeter==2.3.0        # 4-stem separation (fallback)
+# ── Separation engines ────────────────────────────────────────────────────────
+demucs>=4.0.0               # DEMUCS htdemucs / htdemucs_ft / mdx_extra
+audio-separator>=0.17       # MDX-Net UVR models via onnxruntime
+spleeter>=2.4.0             # 4-stem TensorFlow separator (optional)
 
-# v0.4.4: MDX-Net vocal models (UVR) — vocals-only, fast on CPU, ~66-130 MB.
-# Wraps MDX-Net/MDXC/RoFormer/Demucs/VR behind one API; auto-downloads weights.
-audio-separator>=0.17  # MDX-Net via onnxruntime
-onnxruntime>=1.17      # CPU inference backend (use onnxruntime-gpu for CUDA)
+# ── ML / DL frameworks ────────────────────────────────────────────────────────
+torch>=2.0.0                # DEMUCS, Silero VAD, DeepFilterNet
+torchaudio>=2.0.0           # required by torch audio loading
+tensorflow>=2.16.0          # required by spleeter (tf 2.12.1 not available for py3.12)
 
-# ============================================================================
-# Protobuf - MUST be compatible with TensorFlow version
-# ============================================================================
-# Note: TensorFlow 2.5.0 (used by Spleeter 2.3.0) requires EXACTLY protobuf 3.9.2
-protobuf==3.9.2  # Exact version required by TensorFlow 2.5.0
+# ── ONNX inference ────────────────────────────────────────────────────────────
+onnxruntime>=1.17.0         # MDX-Net + SpeechDenoiser ONNX
+# onnxruntime-openvino      # optional: AVX2/AVX-512 acceleration (uncomment if needed)
+sherpa-onnx>=1.13.0         # DPDFNet + GTCRN speech enhancement
 
-# ============================================================================
-# Deep Learning Framework
-# ============================================================================
-torch>=1.10.0,<2.0.0   # PyTorch (Python 3.8 compatible)
-torchaudio>=0.10.0,<1.0.0  # Audio support for PyTorch
+# ── Speech enhancement ────────────────────────────────────────────────────────
+deepfilternet>=0.5.6        # DeepFilterNet post-separation enhancer
+#   ^ needs Rust toolchain: curl https://sh.rustup.rs | sh -s -- -y
 
-# ============================================================================
-# Machine Learning Backend
-# ============================================================================
-# Note: TensorFlow is installed automatically by Spleeter (2.5.0)
-# TensorFlow from Spleeter is sufficient for both DEMUCS and Spleeter
+# ── DSP / audio I/O ──────────────────────────────────────────────────────────
+numpy>=2.0.0,<2.5.0         # numba (used by librosa/audio-separator) needs ≤2.4; deepfilternet works at runtime despite claiming <2
+scipy>=1.5.0                # SciPy filters used in DSP pipeline
+soundfile>=0.12.0           # WAV read/write
+ffmpeg-python>=0.2.0        # video/audio probing and extraction
+librosa>=0.8.0              # audio utilities
 
-# ============================================================================
-# Numerical & Scientific Computing
-# ============================================================================
-# Note: These versions are pinned to match Spleeter 2.3.0 dependencies
-numpy>=1.16.0,<1.20.0
-scipy>=1.5.0,<1.6.0
-scikit-image>=0.18.0
-librosa==0.8.0  # Spleeter 2.3.0 requires exactly this version
+# ── Utilities ─────────────────────────────────────────────────────────────────
+psutil>=5.9.0               # RAM monitoring in test suite
+pandas>=1.3.0               # required by spleeter internals
 
-# ============================================================================
-# Multimedia Processing
-# ============================================================================
-ffmpeg-python==0.2.0  # Spleeter 2.3.0 requires exactly this version
-
-# ============================================================================
-# Optional Dependencies
-# ============================================================================
-# Uncomment for YouTube support:
-# yt-dlp>=2024.1.0
-
-# ============================================================================
-# Installation Note
-# ============================================================================
-# For GPU support (NVIDIA CUDA 11.8):
-# pip install torch==1.13.1+cu118 torchaudio==0.13.1+cu118 -f https://download.pytorch.org/whl/torch_stable.html
-# Or CPU-only: standard pip install works above
+# ── Model files (not pip — see setup_v044.sh) ────────────────────────────────
+# Organized by source library: models/<source>/...
+# models/sherpa_onnx/dpdfnet_baseline.onnx   — DPDFNet  (8 MB)
+# models/sherpa_onnx/gtcrn_simple.onnx       — GTCRN    (524 KB)
+# models/speechdenoiser/speechdenoiser.onnx  — SpeechDenoiser 48k (16 MB)

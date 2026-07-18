@@ -14,7 +14,7 @@ import os
 block_cipher = None
 
 a = Analysis(
-    ['MusicAssassinGUI_v0.0.1.py'],
+    ['versions/MusicAssassinGUI_v0.0.1.py'],
     pathex=[],
     binaries=[],
     datas=[],
