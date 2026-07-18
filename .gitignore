@@ -5,6 +5,7 @@ __pycache__/
 
 # Model weights
 pretrained_models/
+models/
 
 # Build outputs
 build/output*/
@@ -13,6 +14,7 @@ dist/
 
 # Logs
 *.log
+logs/
 
 # Editor swap files
 *.swp
@@ -24,3 +26,7 @@ dist/
 # Python venv (if ever placed in repo)
 venv/
 .venv/
+
+# Test audio outputs
+test_outputs/
+handoff/

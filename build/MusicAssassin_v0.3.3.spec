@@ -15,7 +15,7 @@ from PyInstaller.utils.hooks import collect_data_files
 block_cipher = None
 
 a = Analysis(
-    ['MusicAssassinGUI_v0.3.3.py'],
+    ['versions/MusicAssassinGUI_v0.3.3.py'],
     pathex=[],
     binaries=[],
     datas=[

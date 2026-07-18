@@ -62,7 +62,7 @@ fi
 # Strip leading 'v' if provided (e.g. v0.4.1 -> 0.4.1)
 VERSION="${1#v}"
 
-EXECUTABLE_FILE="MusicAssassinGUI_v${VERSION}.py"
+EXECUTABLE_FILE="versions/MusicAssassinGUI_v${VERSION}.py"
 SPEC_FILE="build/MusicAssassin_v${VERSION}.spec"
 BUILD_DIR="build/output_v${VERSION}"
 

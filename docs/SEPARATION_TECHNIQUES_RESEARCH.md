@@ -1,6 +1,7 @@
 # Music Removal & Source Separation — Techniques, Tools & Research
 
 Compiled research covering classical DSP, deep learning architectures, open-source projects, commercial tools, and applicability to Music Assassin.
+**Open-source only** — all models and tools referenced here must be freely available (MIT/Apache/CC). Commercial-only tools are noted as reference-only.
 
 ---
 
@@ -17,14 +18,24 @@ Compiled research covering classical DSP, deep learning architectures, open-sour
    - UNet / Spectrogram-domain UNets
    - LSTM / Open-Unmix
    - Demucs / HTDemucs (Waveform + Spectrogram Hybrid)
-   - MDX-Net
+   - MDX-Net / MDX23C
    - BS-RoFormer (Band-Split RoPE Transformer)
    - MelBand-RoFormer
    - SCNet (Sparse Compression Network)
    - Conditioned UNet (text/label-guided)
    - Generative / Flow-based Separation
+   - HS-TasNet (Real-Time, 23 ms)
+   - RT-STT (Real-Time Single-Path, Nov 2025)
+   - TISDiSS (Scalable Inference Framework)
+   - Band-SCNet (Causal Lightweight, 2025)
 3. [Open-Source Projects & Repos](#3-open-source-projects--repos)
-4. [Commercial AI Tools](#4-commercial-ai-tools)
+4. [Inference Optimisation Techniques](#4-inference-optimisation-techniques)
+   - Test-Time Augmentation (TTA)
+   - Chunking & Overlap Strategies
+   - Quantisation (INT8 / FP16)
+   - Model Ensembling
+   - two-stems mode (Demucs)
+5. [Commercial AI Tools (reference only)](#5-commercial-ai-tools-reference-only)
    - LALAL.AI
    - remove.music
    - AudioCleaner.ai
@@ -256,13 +267,24 @@ Educational / baseline reference only. Not recommended for production. The jump 
 **What it is:**
 Meta's hybrid architecture combining waveform-domain (time-domain) U-Net with a spectrogram-domain branch. The two branches share information via cross-attention at multiple scales. HTDemucs adds Transformer encoder layers to the bottleneck.
 
-**Models available:**
+**Models available (full list from Demucs repo):**
 | Model | Description | Notes |
 |---|---|---|
 | `htdemucs` | 4-stem, balanced quality/speed | Default |
 | `htdemucs_ft` | Fine-tuned per stem | Best Demucs quality |
-| `mdx_extra` | MDX competition variant | Higher SDR, more VRAM |
 | `htdemucs_6s` | 6-stem (adds guitar + piano) | Experimental |
+| `hdemucs_mmi` | Hybrid Demucs v3 retrained on MusDB HQ | v3 baseline |
+| `mdx` | MDX21 challenge winner (MusDB HQ only) | Competition model |
+| `mdx_extra` | MDX track B + extra training data | Higher SDR |
+| `mdx_q` | Quantized MDX (~300 MB) | Smaller, slight quality loss |
+| `mdx_extra_q` | Quantized MDX Extra (~300 MB) | Best quality + quantized |
+
+**Key Demucs inference flags:**
+- `--two-stems=vocals` — only compute vocals vs. everything else (~2× faster, avoids computing drums/bass/other stems we don't need)
+- `--shifts N` — random-shift TTA (GPU only); same polarity-flip idea but time-domain
+- `--segment N` — reduce segment size to lower peak RAM (≥10 s recommended)
+- `--overlap 0.25` — default 25% overlap between chunks; increase for smoother joins
+- `--mp3` + `--mp3-bitrate 320` — output MP3 directly
 
 **Strengths:**
 - Produces naturally sounding output with minimal metallic artifacts.
@@ -284,23 +306,31 @@ Meta's hybrid architecture combining waveform-domain (time-domain) U-Net with a 
 TFC-TDF UNet operating in the STFT domain. Developed by Kuielab & Woosung Choi, won the MDX21 competition. Uses Time-Frequency Channel (TFC) convolutions combined with Time-Distributed Fully-connected (TDF) layers.
 
 **Models relevant to Music Assassin (via audio-separator):**
-| Model | Size | Specialty |
-|---|---|---|
-| `UVR-MDX-NET-Voc_FT` | ~66 MB | Vocals, fast CPU | ← currently used |
-| `Kim_Vocal_2` | ~130 MB | Vocals, more robust | ← currently used |
-| `MDX23C` (ZFTurbo) | ~200 MB | All 4 stems, **highest SDR** | not yet used |
-| `UVR-MDX-NET-Inst_HQ_4` | ~66 MB | Instrumental | not yet used |
+| Model | Size | Format | Specialty | Status |
+|---|---|---|---|---|
+| `UVR-MDX-NET-Voc_FT.onnx` | 66 MB | ONNX | Vocals, fast CPU | ✓ in use |
+| `Kim_Vocal_2.onnx` | 130 MB | ONNX | Vocals, more robust | ✓ in use |
+| `MDX23C-8KFFT-InstVoc_HQ.ckpt` | 448 MB | torch | Best vocals, MDXC arch | ✓ added v0.4.2-RT |
+| `MDX23C-8KFFT-InstVoc_HQ_2.ckpt` | 448 MB | torch | Improved variant | ✓ added v0.4.2-RT |
+| `UVR-MDX-NET-Inst_HQ_4.onnx` | 66 MB | ONNX | Instrumental stem | candidate |
+
+**MDX23C architecture (MDXC):**
+- Based on KUIELab TFC-TDF v3 with MDXC improvements.
+- Outputs both vocals and instrumental stems simultaneously.
+- Uses `.ckpt` format (torch), NOT onnxruntime — ~2–4× slower than ONNX MDX-Net on CPU.
+- Weights hosted publicly on HuggingFace: `Blane187/all_public_uvr_models`.
+- Auto-downloaded by audio-separator on first use (~448 MB per model).
+- SDR ~10 on vocals vs ~8 for MDX-Net Voc_FT.
 
 **Strengths:**
-- Lightweight (66–200 MB vs 600 MB for mdx_extra).
-- Runs fast on CPU via ONNX runtime.
-- MDX23C achieves **10.08 SDR** on MUSDB — best open-weights model available.
+- ONNX variants: lightweight (66–130 MB), fast via onnxruntime, CPU-friendly.
+- MDX23C: highest open-source vocal SDR of any model usable via audio-separator.
 
 **Weaknesses:**
+- MDX23C `.ckpt`: requires torch (heavy), ~2–4× slower than ONNX on CPU.
 - Fixed input length per chunk (less flexible than waveform models).
-- ONNX format limits customization.
 
-**Current status in Music Assassin:** You use `UVR-MDX-NET-Voc_FT` and `Kim_Vocal_2`. MDX23C is the obvious next addition.
+**Current status in Music Assassin:** ONNX models in use since v0.4.2. MDX23C added in v0.4.2-RT testing branch.
 
 ---
 
@@ -428,24 +458,228 @@ Research interest only at this stage. The direction is promising for cases where
 
 ---
 
-## 3. Open-Source Projects & Repos
+### HS-TasNet — Hybrid Spectrogram TasNet (Real-Time, 23 ms)
 
-| Project | Architecture | Stems | Notable Feature |
-|---|---|---|---|
-| [Demucs (Meta)](https://github.com/facebookresearch/demucs) | Hybrid waveform+spectrogram UNet + Transformer | 4 (+ 6-stem variant) | Best general-purpose open-weights model |
-| [UVR — Ultimate Vocal Remover](https://github.com/Anjok07/ultimatevocalremovergui) | MDX-Net, VR-Arch, Demucs wrappers | Vocals + instruments | Largest community model zoo; hundreds of fine-tuned variants |
-| [audio-separator](https://github.com/nomadkaraoke/python-audio-separator) | Wraps UVR models + Demucs | All | Python API for UVR models — what Music Assassin uses |
-| [BS-RoFormer (lucidrains)](https://github.com/lucidrains/BS-RoFormer) | Band-Split RoPE Transformer | 4 | SOTA architecture; clean PyTorch |
-| [bs-roformer-infer](https://github.com/openmirlab/bs-roformer-infer) | BS-RoFormer | 4 | Inference-only, auto checkpoint download |
-| [ZFTurbo/Music-Source-Separation-Training](https://github.com/ZFTurbo/Music-Source-Separation-Training) | BS-RoFormer, MelBand-RoFormer, SCNet, Demucs, MDX23C | 4 | Unified training + best pretrained weights; HuggingFace hosted |
-| [Open-Unmix (UMX)](https://github.com/sigsep/open-unmix-pytorch) | BiLSTM | 4 | Academic reference baseline; well-documented |
-| [Spleeter (Deezer)](https://github.com/deezer/spleeter) | UNet (TensorFlow) | 2 / 4 / 5 stems | Established; easy API; outclassed by newer models |
-| [Generative Source Separation](https://github.com/gzhu06/GenerativeSourceSeparation) | Normalizing Flows | Music stems | Flow-based generative approach |
-| [librosa HPSS](https://librosa.org/doc/main/auto_examples/plot_hprss.html) | DSP (median filter) | Harmonic + Percussive | Zero-dependency fast pre-separation |
+**Paper:** [arxiv 2402.17701](https://arxiv.org/abs/2402.17701) — L-Acoustics, Feb 2024
+**Repos:** [lucidrains/HS-TasNet](https://github.com/lucidrains/HS-TasNet) (MIT) · [temismink/HS-Tasnet](https://github.com/temismink/HS-Tasnet)
+**Install:** `pip install HS-TasNet`
+
+**What it is:**
+Designed from the ground up for real-time/streaming inference. Hybrid waveform + spectrogram branches (like HTDemucs) but with causal convolutions and a small look-ahead window instead of global context.
+
+**Key specs:**
+- **Latency: 23 ms** at 44100 Hz — suitable for live broadcast and hearing aids.
+- SDR: 4.65 on MusDB (vs 8.5 for HTDemucs) — the quality/latency tradeoff.
+- Has a built-in `model.sounddevice_stream(duration_seconds=N)` method for real-time demo.
+- Checkpoint loading via `HSTasNet.init_and_load_from('./path/to.ckpt')`.
+
+**Status (June 2026):** No publicly available pretrained weights. Must train on MUSDB18.
+Training: `python train.py --dataset_path /path/to/musdb18hq`
+
+**Similar projects using same paradigm:**
+- Conv-TasNet (ancestor) — fully causal, <10 ms, lower quality, available via `asteroid` library
+- BSRNN (hearing aid variants) — causal unidirectional LSTM, chunks with state caching
+
+**Use case for Music Assassin:**
+Infrastructure added in v0.4.2-RT. Activate by placing a trained `.pt` checkpoint in `pretrained_models/`. This is the path to true real-time daemon mode.
 
 ---
 
-## 4. Commercial AI Tools
+### RT-STT — Real-Time Single-Path TFC-TDF UNet (Nov 2025)
+
+**Paper:** [arxiv 2511.13146](https://arxiv.org/abs/2511.13146) — Nov 2025
+**Status:** No public GitHub or weights as of June 2026.
+
+**What it is:**
+Evolves the Dual-Path TFC-TDF UNet (DTTNet, ICASSP 2024) into a **single-path** design optimised for real-time feasibility:
+- Single-path modeling outperforms dual-path in RT scenarios by enabling parallelism.
+- **Channel expansion fusion** technique recovers quality lost from removing the dual-path.
+- Applies INT8 **quantisation** by default (same trick Music Assassin already uses for HTDemucs).
+- Benchmarked with real-time factor < 1.0 — processes audio faster than it plays.
+
+**Related open project:**
+[junyuchen-cjy/DTTNet-Pytorch](https://github.com/junyuchen-cjy/DTTNet-Pytorch) — the ICASSP 2024 dual-path precursor, 10.12 dB cSDR on vocals, 86% fewer parameters than BSRNN. Public weights available.
+
+**Use case for Music Assassin:**
+Placeholder in v0.4.2-RT. When a public implementation appears, this becomes the preferred RT model (better than HS-TasNet at comparable latency, plus native INT8).
+
+---
+
+### TISDiSS — Training-Time and Inference-Time Scalable Source Separation
+
+**Paper:** [arxiv 2509.15666](https://arxiv.org/pdf/2509.15666)
+
+**What it is:**
+A framework for flexible speed–quality trade-offs at inference time without retraining:
+- **Unified early-split multi-loss supervision** — trains multiple output heads at different compute budgets.
+- **Shared-parameter design** — one model, multiple inference depths.
+- **Dynamic inference repetitions** — caller decides how many passes to run vs. how much time is available.
+
+**Relevance:**
+Directly applicable to Music Assassin: same model could run in "fast" mode (1 pass, lower quality) for live filtering or "quality" mode (N passes) for offline processing. The current Normal/Balanced/Aggressive mode distinction could map onto this.
+
+---
+
+### Band-SCNet — Causal Lightweight (2025)
+
+**Paper:** [INTERSPEECH 2025 — yang25d](https://www.isca-archive.org/interspeech_2025/yang25d_interspeech.pdf)
+
+**What it is:**
+A **causal** (streaming-capable), lightweight variant of SCNet using band-splitting. Designed for high-performance real-time separation at low computational cost.
+
+**Key specs:**
+- Causal design — no future context, suitable for streaming.
+- Lightweight — fewer parameters than SCNet standard.
+- High performance relative to compute budget.
+
+**Relationship to SCNet:**
+SCNet uses band-splitting + Conformer blocks. Band-SCNet makes the Conformer causal and trims parameters. Represents the direction of real-time + quality convergence.
+
+**Use case for Music Assassin:**
+When public weights appear (expected alongside INTERSPEECH 2025 materials), this could replace HS-TasNet as the RT model — better quality at similar latency.
+
+---
+
+## 3. Open-Source Projects & Repos
+
+| Project | Architecture | Stems | License | Notable Feature |
+|---|---|---|---|---|
+| [Demucs (Meta)](https://github.com/facebookresearch/demucs) | Hybrid waveform+spectrogram UNet + Transformer | 4 + 6-stem | MIT | Best general-purpose; `--two-stems` mode; 8 models |
+| [UVR — Ultimate Vocal Remover](https://github.com/Anjok07/ultimatevocalremovergui) | MDX-Net, VR-Arch, Demucs | Vocals + instruments | MIT | Largest community model zoo; hundreds of fine-tuned variants |
+| [audio-separator](https://github.com/nomadkaraoke/python-audio-separator) | Wraps UVR + Demucs + MDXC | All | MIT | Python API Music Assassin uses; MDX23C + overlap/chunk params |
+| [HS-TasNet (lucidrains)](https://github.com/lucidrains/HS-TasNet) | Hybrid TasNet (causal) | 4 | MIT | **23 ms latency**; sounddevice_stream built-in; pip installable |
+| [HS-TasNet (reference)](https://github.com/temismink/HS-Tasnet) | Same | 4 | MIT | Original ICASSP 2024 implementation |
+| [DTTNet (dual-path TFC-TDF)](https://github.com/junyuchen-cjy/DTTNet-Pytorch) | Dual-Path TFC-TDF UNet | 4 | MIT | ICASSP 2024; 10.12 dB vocals; 86% fewer params than BSRNN; public weights |
+| [BS-RoFormer (lucidrains)](https://github.com/lucidrains/BS-RoFormer) | Band-Split RoPE Transformer | 4 | MIT | SOTA vocals; SDX23 winner |
+| [bs-roformer-infer](https://github.com/openmirlab/bs-roformer-infer) | BS-RoFormer | 4 | MIT | Inference-only, auto checkpoint download |
+| [ZFTurbo/Music-Source-Separation-Training](https://github.com/ZFTurbo/Music-Source-Separation-Training) | BS-RoFormer, MelBand-RoFormer, SCNet, MDX23C | 4 | Apache 2 | Best open pretrained weights; TTA; ONNX/TensorRT export |
+| [MVSEP-MDX23](https://github.com/ZFTurbo/MVSEP-MDX23-music-separation-model) | MDX23C | 4 | Apache 2 | Contest-winning model; `--overlap_large`/`--overlap_small`; `--cpu` flag |
+| [Open-Unmix (UMX)](https://github.com/sigsep/open-unmix-pytorch) | BiLSTM | 4 | MIT | Academic reference; torch 2.0 updated; well-documented |
+| [Spleeter (Deezer)](https://github.com/deezer/spleeter) | UNet (TensorFlow) | 2 / 4 / 5 stems | MIT | Established; easy API; outclassed by newer models |
+| [asteroid](https://github.com/asteroid-team/asteroid) | Conv-TasNet + many others | Speech/music | MIT | PyPI-installable; includes causal Conv-TasNet for RT |
+| [Generative Source Separation](https://github.com/gzhu06/GenerativeSourceSeparation) | Normalizing Flows | Music stems | MIT | Flow-based; handles near-inaudible speech case |
+| [librosa HPSS](https://librosa.org/doc/main/auto_examples/plot_hprss.html) | DSP (median filter) | Harmonic + Percussive | ISC | Zero-dependency fast pre-separation; `librosa.effects.hpss()` |
+| [AudioSeparation (set-soft)](https://github.com/set-soft/AudioSeparation) | Wraps audio-separator | All | MIT | CLI + ComfyUI interface; useful reference for UI integration |
+| [SpeechBrain](https://github.com/speechbrain/speechbrain) | SepFormer, DPRNN, Conv-TasNet, MetricGAN+, MVDR | Speech | Apache 2 | DSP+DL hybrid pipeline; 100+ HF models; phase-bypass architecture |
+| [SepReformer](https://github.com/dmlguq456/SepReformer) | Asymmetric Enc-Dec + Global/Local Transformer | Speech | MIT | NeurIPS 2024; better compute-quality ratio than SepFormer |
+| [Bandit/Banquet (CASS)](https://github.com/kwatcharasupat/source-separation-landing) | Band-Split + FiLM conditioning | 4 cinematic stems | Non-commercial | Dialogue + singing vocals + music + SFX separation |
+
+**Key open-source weight repositories (HuggingFace):**
+| Weights | Source | Format | SDR |
+|---|---|---|---|
+| `MDX23C-8KFFT-InstVoc_HQ.ckpt` | [Blane187/all_public_uvr_models](https://huggingface.co/Blane187/all_public_uvr_models) | torch | ~10 |
+| `MDX23C-8KFFT-InstVoc_HQ_2.ckpt` | Same repo | torch | ~10 |
+| `mel-roformer-zfturbo-vocals-v1` | [ZFTurbo/Music-Source-Separation-Training](https://github.com/ZFTurbo/Music-Source-Separation-Training/blob/main/docs/pretrained_models.md) | torch | 8.94 |
+| `BS-RoFormer` weights | [ZFTurbo pretrained models](https://github.com/ZFTurbo/Music-Source-Separation-Training/blob/main/docs/pretrained_models.md) | torch | SOTA |
+| `SCNet-XL-IHF` | Same | torch | 10.08 |
+
+---
+
+## 4. Inference Optimisation Techniques
+
+These apply across model types and are independent of model selection. All are open-source/free.
+
+### Test-Time Augmentation (TTA) — Polarity Flip
+
+**What it is:** Run the model twice — once on normal audio, once on polarity-inverted audio. Average the results:
+```
+result = (model(x) - model(-x)) / 2
+```
+A well-trained model satisfies `model(-x) ≈ -model(x)`. Averaging cancels asymmetric biases.
+
+**Effect:** +0.1–0.3 dB SDR. **Cost:** 2× inference time.
+**Works with:** Any separator (Demucs, MDX-Net, MDX23C, HS-TasNet, audio-separator).
+**Added to Music Assassin:** v0.4.2-RT (TTA checkbox).
+
+**ZFTurbo's extended TTA** (from `inference.py`):
+- Polarity flip (as above).
+- Channel swap (L↔R) for stereo.
+- Both combined (4 passes total).
+- `--use_tta` flag in ZFTurbo's inference.py.
+
+---
+
+### Chunking & Overlap Strategies
+
+**The core pattern:**
+```
+input → [chunk 0] [chunk 1] [chunk 2] ...
+                 ↑overlap↑ ↑overlap↑
+output ← crossfade at chunk boundaries (linear fade in/out)
+```
+
+**Key parameters from production repos:**
+
+| Param | Demucs | audio-separator MDXC | Music Assassin |
+|---|---|---|---|
+| Chunk size | `--segment N` (≥10 s) | `--chunk_duration` (minutes) | 60 s hardcoded |
+| Overlap | `--overlap 0.25` | `--overlap_large 0.6` | 2 s crossfade |
+| Crossfade | Linear fade in/out | Simple concatenation | Linear fade |
+
+**MDXC-specific (audio-separator):**
+- `overlap` parameter: 2–50 (higher = better quality, slower). Default 8.
+- `segment_size`: 256 default; larger uses more RAM but may improve quality.
+- `batch_size`: 1 default; larger uses more RAM, slightly faster.
+
+**ZFTurbo's `bigshifts_wrapper`:**
+- Shifts audio by random amounts before chunking, averages the shifted outputs.
+- Eliminates chunk-boundary artifacts more effectively than crossfading.
+- Available in `ZFTurbo/Music-Source-Separation-Training` inference.py.
+
+---
+
+### Quantisation (INT8 / FP16)
+
+| Method | Speedup | Quality loss | Works on |
+|---|---|---|---|
+| INT8 dynamic (torch) | 2–3× | ~0.1–0.3 dB | CPU; htdemucs Linear layers |
+| FP16 (torch half) | ~2× | negligible | GPU only |
+| ONNX INT8 | 2–4× | ~0.1–0.2 dB | CPU; MDX-Net ONNX models |
+| TensorRT FP16 | 25–30× | negligible | NVIDIA GPU only |
+
+**Already in Music Assassin:** INT8 dynamic for htdemucs (checkbox in UI).
+**MDX-Net ONNX** already runs in FP32 via onnxruntime — can be quantised to INT8 with onnxruntime's quantization API for further speedup.
+
+---
+
+### Model Ensembling
+
+Average the stem outputs from two or more models:
+```python
+vocals = (model_a.separate(audio) + model_b.separate(audio)) / 2
+```
+**Effect:** +0.5–1.0 dB SDR with no retraining.
+**Best pairs:** HTDemucs_ft + MDX23C (different architectures, different error patterns).
+**Cost:** 2× inference time (can run models in parallel on multi-core CPU with threading).
+**Documented in:** [ZFTurbo ensemble.md](https://github.com/ZFTurbo/Music-Source-Separation-Training/blob/main/docs/ensemble.md)
+
+---
+
+### two-stems Mode (Demucs)
+
+Using `--two-stems=vocals` (CLI) or `Separator(two_stems='vocals')` (Python API) tells Demucs to only compute the vocals + everything-else split instead of all 4 stems. Since each stem head runs independently in HTDemucs:
+- **~2× faster** — skips drums, bass, other heads.
+- **Same vocals quality** as full 4-stem run.
+- Available via `demucs.api.Separator` class.
+
+Music Assassin currently calls `apply_model` at the low level and manually extracts the vocals index. Switching to `demucs.api.Separator(two_stems='vocals')` would give this speedup automatically.
+
+---
+
+### Input Normalisation + Denormalisation
+
+From ZFTurbo's `inference.py`:
+```python
+if config.inference["normalize"]:
+    mix, norm_params = normalize_audio(mix)
+    # ... run model ...
+    estimates = denormalize_audio(estimates, norm_params)
+```
+Normalising to a consistent RMS before inference prevents the model from dealing with extreme loud/quiet inputs, which can cause clipping or silence in the output. Music Assassin currently normalises in `audio_prefilter()` — the same principle.
+
+---
+
+## 5. Commercial AI Tools (reference only)
 
 ### LALAL.AI
 
@@ -600,52 +834,300 @@ Also covers **model ensembling** — average predictions from multiple architect
 
 ---
 
+## 5b. SpeechBrain Toolkit — Hybrid DSP + DL Pipeline
+
+**Repo:** [github.com/speechbrain/speechbrain](https://github.com/speechbrain/speechbrain) (Apache 2.0)
+**Docs:** [speechbrain.readthedocs.io](https://speechbrain.readthedocs.io/en/latest/)
+**Install:** `pip install speechbrain`
+**HuggingFace:** [huggingface.co/speechbrain](https://huggingface.co/speechbrain) — 100+ pretrained models
+
+### The Pipeline the User Remembers: Phase-Bypass DSP+AI Chain
+
+SpeechBrain's source separation and enhancement pipeline is the clearest example of **DSP filters feeding into AI models with a feedforward of the original audio**. The architecture:
+
+```
+Input Mixture
+      │
+      ├──────────────────────────────────── PHASE BYPASS ──────────────┐
+      │                                                                  │
+      ▼                                                                  │
+[DSP: STFT]  → Magnitude   →  [Neural Mask Network]  →  Masked Mag     │
+              → Phase (original) ──────────────────────────────────────►│
+                                                                         │
+                                                               Masked Mag × exp(j·phase)
+                                                                         │
+                                                                    [DSP: ISTFT]
+                                                                         │
+                                                                  Output Source
+```
+
+In code (from SpeechBrain tutorial):
+```python
+# Encoder: STFT — DSP stage 1
+y = torch.stft(inp, n_fft=self.fft_size, return_complex=True)
+mag   = y.abs()    # magnitude only → goes to neural net
+phase = y.angle()  # phase → BYPASSED (original audio feeds forward)
+
+# Neural stage: LSTM/SepFormer produces a mask per source
+mask = self.masking(mag)       # values 0-1 per frequency bin
+
+# Decoder: original phase rejoins — DSP stage 2
+sourcehat_dft = (mask * mag) * torch.exp(1j * phase)   # bypass reintegration
+sourcehat     = torch.istft(sourcehat_dft, n_fft=self.fft_size)
+```
+
+**This is the feedforward the user remembered:** The original audio's phase information passes *through* the DSP (STFT) into the reconstruction, completely bypassing the neural network. The AI only modifies amplitude (via mask), the original time structure (phase) is preserved. This is why spectral masking produces natural-sounding output — it's not guessing the phase.
+
+The SpeechBrain tutorial explicitly states: *"masks are basically band stop filters which aims to remove the interferences from the other source."* The neural mask IS a learned, adaptive DSP filter.
+
+---
+
+### Beamforming + Neural: Multi-Stage DSP → AI → DSP
+
+For multi-microphone input, SpeechBrain implements a more explicit DSP → AI → DSP chain:
+
+```
+Microphone Array
+      │
+[DSP: STFT per mic]
+      │
+[DSP: Beamformer (MVDR/GEV/Delay-Sum)]  ← "without introducing nonlinearities"
+   Generates frequency-wise weights W(k) × STFT of each mic
+      │
+[Neural: Post-filter / Mask Network]    ← cleans up beamformer residuals
+      │
+[DSP: ISTFT]
+      │
+Clean Speech
+```
+
+This is a fully **differentiable hybrid graph** — the DSP stages and neural stages are jointly trained. From the SpeechBrain paper: *"We implement delay-and-sum, MVDR, and GeV beamforming. Beamforming generates frequency-wise coefficients that multiply the STFT of each microphone and add the products to produce enhanced speech."*
+
+Note: For single-channel audio (Music Assassin's use case), beamforming doesn't apply. But the same principle applies in the post-filter stage after stem separation.
+
+---
+
+### Two Enhancement Approaches in SpeechBrain
+
+**1. Spectral Masking** (multiplicative, preserves phase):
+- Noisy spectrogram → neural mask (0–1) → masked magnitude + original phase → ISTFT
+- Preserves time structure; can produce artifacts if mask is imprecise
+- Models: MetricGAN+, SEGAN, spectral masking baseline
+
+**2. Spectral Mapping** (additive, learns clean spectrogram directly):
+- Noisy spectrogram → neural network → predicted clean spectrogram
+- More powerful but needs its own phase estimation
+- Models: MetricGAN-U (unsupervised variant)
+
+Music Assassin's current post-processing (formant enhancement, de-esser) is analogous to SpeechBrain's spectral masking — the original phase is implicitly preserved because the overlay-add crossfade and filtering happen in the time domain.
+
+---
+
+### Key SpeechBrain Models and Usage
+
+All models use `from_hparams` for instant HuggingFace loading:
+
+```python
+from speechbrain.inference.separation  import SepformerSeparation
+from speechbrain.inference.enhancement import SpectralMaskEnhancement
+
+# Speech separation (speaker unmixing)
+sep_model = SepformerSeparation.from_hparams(
+    source="speechbrain/sepformer-whamr",
+    savedir="pretrained_models/sepformer-whamr"
+)
+est_sources = sep_model.separate_file(path="dialogue_with_music.wav")
+# Returns: Tensor [1, samples, 2] — two separated sources
+
+# Speech enhancement post-processor (cleans vocals after separation)
+enhancer = SpectralMaskEnhancement.from_hparams(
+    source="speechbrain/metricgan-plus-voicebank"
+)
+enhanced = enhancer.enhance_file("extracted_vocals.wav")
+```
+
+**Pretrained models (HuggingFace):**
+| Model ID | Dataset | SI-SNRi | Input SR | Notes |
+|---|---|---|---|---|
+| `speechbrain/sepformer-wsj02mix` | WSJ0-2Mix | 22.4 dB | 8 kHz | 2-speaker separation |
+| `speechbrain/sepformer-wsj03mix` | WSJ0-3Mix | 19.8 dB | 8 kHz | 3-speaker separation |
+| `speechbrain/sepformer-libri2mix` | LibriMix 2spk | ~20 dB | 8 kHz | Robust to reading style |
+| `speechbrain/sepformer-libri3mix` | LibriMix 3spk | ~19 dB | 8 kHz | 3-speaker |
+| `speechbrain/resepformer-wsj02mix` | WSJ0-2Mix | 18.6 dB | 8 kHz | RE-SepFormer (efficient) |
+| `speechbrain/sepformer-wham` | WHAM! | ~20 dB | 8 kHz | + environmental noise |
+| `speechbrain/sepformer-whamr` | WHAMR! | 13.7 dB | 8 kHz | + noise + reverberation |
+| `speechbrain/metricgan-plus-voicebank` | Voicebank-DEMAND | PESQ best | 16 kHz | Enhancement (not separation) |
+
+---
+
+### SepFormer Architecture — How the Encoder + Masknet + Decoder Works
+
+The SepFormer uses a **learnable convolutional frontend** (not STFT) combined with dual-path Transformers in the masking network:
+
+```
+Waveform → [Conv1d Encoder]  → Chunks  → [Intra-chunk Transformer]
+                                                 ↓
+                                         [Inter-chunk Transformer]  ← Dual-path
+                                                 ↓
+                                         [Mask × Chunk Features]
+                                                 ↓
+                                         [ConvTranspose1d Decoder]
+                                                 ↓
+                                         Separated sources
+```
+
+Key: both Transformers use **multi-head self-attention with position encoding** — no recurrence. "Attention is all you need in speech separation."
+
+Performance: 22.4 dB SI-SNRi (WSJ0-2Mix, dynamic mixing) — state-of-the-art at release (2020), still competitive.
+
+---
+
+### SepReformer — Asymmetric Encoder-Decoder (NeurIPS 2024)
+
+**Paper:** [Separate and Reconstruct: Asymmetric Encoder-Decoder for Speech Separation](https://arxiv.org/abs/2406.05516)
+**Repo:** [github.com/dmlguq456/SepReformer](https://github.com/dmlguq456/SepReformer) (MIT)
+
+Evolutionary step from SepFormer:
+- **Asymmetric** design: heavier encoder than decoder — most computation at encoding, reconstruction is lightweight.
+- **Global + Local Transformer units** at each scale — captures both long-range dependencies (music beat structure, phrase level) and local patterns (note attack, phoneme timing) simultaneously.
+- **More compute-efficient** than SepFormer at same quality level (better SI-SNR vs MACs ratio).
+- Pretrained weights: `SepReformer-B` for WSJ0-2MIX (included in repo via Git LFS).
+
+```bash
+python run.py --model SepReformer_Base_WSJ0 --engine-mode infer_sample \
+              --sample-file ./sample_wav/sample_WSJ.wav
+```
+
+---
+
+### Cinematic Audio — Bandit/Banquet (ICASSP 2025 area)
+
+**Paper:** [Facing the Music: Singing Voice Separation in Cinematic Audio](https://arxiv.org/abs/2408.03588)
+**Code:** github.com/kwatcharasupat/source-separation-landing
+
+Most relevant to Music Assassin (films, YouTube, TV content). 4-stem system:
+- Dialogue · Instrumental music · **Singing vocals** · Effects (SFX)
+
+Key insight: **singing voice is contextual** — the same vocal can belong to either the music stem or dialogue stem depending on story context. Standard 4-stem models get this wrong.
+
+**Banquet** (the winner): Uses a FiLM (Feature-wise Linear Modulation) layer to condition a shared decoder per stem. Single shared decoder outperforms per-stem decoders (Bandit) because of better feature independence at the bottleneck.
+
+⚠️ Weights carry non-commercial license (MUSDB18-HQ training data restriction). For Music Assassin (open-source), can be used for research/personal use, not redistribution.
+
+---
+
+### What SpeechBrain Is NOT Good For (Music Assassin Context)
+
+| Limitation | Details |
+|---|---|
+| **8 kHz input** | All separation models expect 8 kHz. Music is 44.1 kHz. Must downsample → process → upsample. Quality loss. |
+| **Speech-specific training** | Models trained on WSJ0/LibriMix speech, not music-over-dialogue content. Different spectral statistics. |
+| **No music separation models** | No HTDemucs/MDX-Net equivalent in SpeechBrain's pretrained zoo. |
+| **Slower than ONNX** | All SpeechBrain models require torch. MetricGAN+ (~16 kHz) is feasible on CPU; SepFormer at 8kHz is fast. |
+
+---
+
+### How SpeechBrain Applies to Music Assassin (Practical)
+
+**Tier A — Use directly as post-processor (low effort, open-source, MIT):**
+```python
+# After Demucs/MDX-Net extracts vocals at 44100 Hz:
+from speechbrain.inference.enhancement import SpectralMaskEnhancement
+import torchaudio, torch
+
+enhancer = SpectralMaskEnhancement.from_hparams(
+    source="speechbrain/metricgan-plus-voicebank"
+)
+# Resample 44.1k → 16k for MetricGAN+
+vocals_16k = torchaudio.functional.resample(vocals_tensor, 44100, 16000)
+clean_16k  = enhancer.enhance_batch(vocals_16k.unsqueeze(0), lengths=torch.tensor([1.0]))
+# Resample back 16k → 44.1k
+vocals_out = torchaudio.functional.resample(clean_16k.squeeze(0), 16000, 44100)
+```
+This adds a MetricGAN+ denoising pass over the extracted vocals, removing residual music bleed. Perceptually noticeable improvement especially for voices over loud music beds.
+
+**Tier B — Use phase-bypass insight to understand Music Assassin's current pipeline:**
+Music Assassin's existing `audio_prefilter()` → separation model → `advanced_postprocess_chunked()` IS implementing the same paradigm SpeechBrain formalises:
+1. `audio_prefilter()` = DSP stage 1 (gate + high-pass = removes known-bad frequency ranges)
+2. Separation model = neural mask stage (MDX-Net ONNX or HTDemucs)
+3. Post-processing (de-esser, formant enhancement) = DSP stage 2
+
+The models internally do the phase bypass automatically (MDX-Net: STFT-based masking, original phase kept; Demucs: waveform domain, no STFT phase needed at all).
+
+**Tier C — Fine-tune SepFormer on MUSDB18HQ for music-aware separation (high effort):**
+SpeechBrain supports fine-tuning via `from_hparams` + standard SpeechBrain training recipes. Fine-tuning `sepformer-whamr` on MUSDB18HQ would produce an 8kHz speech-from-music separator. Not recommended currently (CPU training is slow, and MDX23C already covers this at 44.1 kHz).
+
+---
+
 ## 6. Technique Comparison Table
 
-| Technique | Quality | Speed | Memory | Requires GPU | Requires Training Data | Handles Real-Time | Best For |
+| Technique | Quality | Speed (CPU) | Memory | GPU needed | Open Source | Real-Time | Best For |
 |---|---|---|---|---|---|---|---|
-| Spectral Subtraction | Low | Fastest | Minimal | No | No | Yes | Stationary noise reference |
-| Wiener Filter (classical) | Low-Med | Fast | Minimal | No | No | Yes | Known signal statistics |
-| HPSS | Low-Med | Fast | Minimal | No | No | Yes | Harmonic/percussive pre-separation |
-| NMF | Med | Med | Low | No | Optional (templates) | No | Unsupervised, known instrument |
-| LMS Adaptive Filter | Med | Fast | Minimal | No | No | Yes | Reference signal available |
-| Notch Filter | High (narrow) | Fastest | Minimal | No | No | Yes | Fixed-frequency hum/tone |
-| Spleeter (UNet) | Med | Med | 400 MB | Optional | Yes | No | Legacy baseline |
-| Open-Unmix (LSTM) | Med | Med | 300 MB | Optional | Yes | No | Academic reference |
-| MDX-Net (Voc_FT) | High | Fast | 66 MB | No (ONNX) | Yes | No | CPU-friendly vocals |
-| MDX23C (ZFTurbo) | Very High | Med | 200 MB | Optional | Yes | No | Best CPU-friendly all-stems |
-| HTDemucs | High | Med | 600 MB | Recommended | Yes | No | Natural-sounding output |
-| HTDemucs_ft | Very High | Slow | 600 MB | Recommended | Yes | No | Best Demucs quality |
+| Spectral Subtraction | Low | Fastest | Minimal | No | Yes | Yes | Stationary noise reference |
+| Wiener Filter (classical) | Low-Med | Fast | Minimal | No | Yes | Yes | Known signal statistics |
+| HPSS (librosa) | Low-Med | Fast | Minimal | No | Yes | Yes | Harmonic/percussive pre-separation |
+| NMF | Med | Med | Low | No | Yes | No | Unsupervised, known instrument |
+| LMS Adaptive Filter | Med | Fast | Minimal | No | Yes | Yes | Reference signal available |
+| Notch Filter | High (narrow) | Fastest | Minimal | No | Yes | Yes | Fixed-frequency hum/tone |
+| Spleeter (UNet/TF) | Med | Med | 400 MB | Optional | Yes (MIT) | No | Legacy baseline |
+| Open-Unmix (LSTM) | Med | Med | 300 MB | Optional | Yes (MIT) | No | Academic reference |
+| MDX-Net Voc_FT (ONNX) | High | Fast | 66 MB | No | Yes | No | CPU-friendly vocals |
+| MDX-Net Kim_v2 (ONNX) | High | Fast | 130 MB | No | Yes | No | More robust CPU vocals |
+| MDX23C InstVoc HQ (.ckpt) | Very High | Med-Slow | 448 MB | Optional | Yes | No | Best open-source vocals SDR |
+| DTTNet (dual-path TFC-TDF) | Very High | Med | ~200 MB | Optional | Yes (MIT) | No | 86% fewer params than BSRNN |
+| HTDemucs | High | Med | 600 MB | Recommended | Yes (MIT) | No | Natural-sounding 4-stem |
+| HTDemucs_ft | Very High | Slow | 600 MB | Recommended | Yes (MIT) | No | Best Demucs quality |
+| htdemucs_6s | High | Slow | 600 MB | Recommended | Yes (MIT) | No | 6-stem (guitar+piano) |
+| mdx_q / mdx_extra_q | High | Med | ~300 MB | Optional | Yes (MIT) | No | Quantized Demucs; faster CPU |
 | SCNet | Very High | Med | 300 MB | Recommended | Yes | No | Single model, all stems |
-| BS-RoFormer | SOTA (vocals) | Slow | 3+ GB | Yes | Yes | No | Best vocal separation |
-| MelBand-RoFormer | SOTA (vocals) | Slow | 3+ GB | Yes | Yes | No | Best perceptual vocal separation |
+| BS-RoFormer | SOTA (vocals) | Slow | 3+ GB | Yes | Yes (MIT) | No | Best vocal separation |
+| MelBand-RoFormer | SOTA (vocals) | Slow | 3+ GB | Yes | Yes (MIT) | No | Best perceptual vocal separation |
+| HS-TasNet | Low-Med | Fast | ~100 MB | No | Yes (MIT) | **Yes (23 ms)** | Live/RT; needs training |
+| RT-STT | Med-High | Fast | TBD | No | Pending | **Yes** | RT + INT8; awaiting release |
+| Band-SCNet | High | Fast | TBD | No | Pending | **Yes** | RT causal, lightweight |
+| SepFormer (SpeechBrain) | High (speech) | Med | ~150 MB | Optional | Yes (Apache) | No | 22.4 dB SI-SNR; 8kHz only |
+| MetricGAN+ (SpeechBrain) | High (enhance) | Fast | ~50 MB | No | Yes (Apache) | No | Post-process vocals; 16kHz |
+| SepReformer (NeurIPS 24) | High (speech) | Med | ~120 MB | Optional | Yes (MIT) | No | More efficient than SepFormer |
+| Banquet (CASS) | High (cinematic) | Slow | TBD | Yes | Partial | No | 4-stem: dialogue+singing+music+SFX |
 | SAM Audio (Meta) | SOTA (all) | TBD | TBD | Yes | Yes | No | Universal; text-prompted |
 
 ---
 
 ## 7. Applicability to Music Assassin
 
-### Currently implemented
+### Currently implemented (v0.4.3)
 - HTDemucs, HTDemucs_ft, MDX_extra (Demucs)
 - Spleeter (4-stem)
-- UVR-MDX-NET-Voc_FT + Kim_Vocal_2 (MDX-Net via audio-separator)
+- UVR-MDX-NET-Voc_FT + Kim_Vocal_2 (MDX-Net ONNX via audio-separator)
 - Pre-filtering: noise gate, high-pass
-- Post-filtering: de-esser, harmonic rejection, formant enhancement
-- Chunked processing for low memory
+- Post-filtering: de-esser, harmonic rejection, formant enhancement, global normalisation
+- Chunked processing (60 s chunks, 2 s crossfade) for low memory
+
+### Added in v0.4.2-RT testing branch
+- MDX23C-8KFFT-InstVoc_HQ.ckpt + HQ2 (via audio-separator)
+- All Demucs variants: htdemucs_6s, hdemucs_mmi, mdx_q, mdx_extra_q
+- HS-TasNet infrastructure (stub — needs weights)
+- RT-STT placeholder
+- TTA polarity-flip checkbox (+0.1–0.3 dB, 2× slower)
 
 ### Gap analysis
 
-| Gap | Current | Better Alternative |
+| Gap | Current | Open-Source Alternative |
 |---|---|---|
-| Best vocal SDR | Kim_Vocal_2 (~8.x SDR) | MDX23C or MelBand-RoFormer (~10 SDR) |
+| Best vocal SDR | Kim_Vocal_2 (~8.x SDR) | MDX23C HQ (~10 SDR) — added v0.4.2-RT |
 | Per-instrument toggles | Vocals only | 4-stem output → per-stem mute sliders |
-| Suppression strength | Binary (on/off) | Strength slider via inverted instrumental mix-back |
-| Music detection gating | None (runs on all segments) | PANNs pre-screen — only process music-present frames |
-| Harmonic pre-filtering | High-pass + noise gate | HPSS pre-pass separates harmonic layer first |
+| Suppression strength | Binary (on/off) | Strength slider: `output = vocals + (1-α)×instrumental` |
+| Music detection gating | None (runs on all segments) | PANNs pre-screen (`panns-inference` package) |
+| Harmonic pre-filtering | High-pass + noise gate | `librosa.effects.hpss()` pre-pass |
 | Reference-guided removal | Not available | NMF with user-provided music clip |
 | Video input/output | Audio only | FFmpeg mux/demux wrapper |
-| Echo/reverb post-processing | Not available | librosa/pedalboard reverb suppression step |
-| Model ensembling | Single model | Average BS-RoFormer + SCNet outputs |
+| Echo/reverb post-processing | Not available | `pedalboard` reverb suppression or DeepFilterNet |
+| Model ensembling | Single model | Average HTDemucs_ft + MDX23C outputs |
+| two-stems speedup | Full 4-stem run | `demucs.api.Separator(two_stems='vocals')` — ~2× faster |
+| ZFTurbo bigshifts TTA | Per-file crossfade | Import `bigshifts_wrapper` from ZFTurbo inference.py |
+| Real-time filtering | Not available | HS-TasNet (needs weights) / Band-SCNet (pending) |
+| Post-separation vocal cleanup | None | MetricGAN+ (SpeechBrain) as final pass — removes residual music bleed |
+| Singing voice vs dialogue | Not distinguished | Banquet model — 4-stem with singing voice stem |
 | Text-prompted separation | Not available | SAM Audio (pending audio-separator integration) |
 
 ---

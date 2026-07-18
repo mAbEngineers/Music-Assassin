@@ -87,7 +87,7 @@ _ffmpeg_pkg_datas, _ffmpeg_pkg_bins, _ffmpeg_pkg_hidden = collect_all('ffmpeg')
 # ============================================================================
 
 a = Analysis(
-    [os.path.join(_repo_root, 'MusicAssassinGUI_v0.4.1.py')],
+    [os.path.join(_repo_root, 'versions', 'MusicAssassinGUI_v0.4.1.py')],
     pathex=[_repo_root],
     binaries=_binaries + _ffmpeg_pkg_bins,
     datas=[

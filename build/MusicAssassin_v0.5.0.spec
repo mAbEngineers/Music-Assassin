@@ -74,7 +74,7 @@ except Exception:
 # ============================================================================
 
 a = Analysis(
-    [os.path.join(_repo_root, 'MusicAssassinGUI_v0.5.0.py')],
+    [os.path.join(_repo_root, 'versions', 'MusicAssassinGUI_v0.5.0.py')],
     pathex=[_repo_root],
     binaries=_binaries + _ffmpeg_pkg_bins + _ort_bins,
     datas=[
