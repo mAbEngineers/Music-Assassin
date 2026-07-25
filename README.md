@@ -9,6 +9,10 @@ This README explains what the project does, which version to use, and exactly
 what changed release-by-release — from the first proof-of-concept script to the
 current AI-powered pipeline.
 
+Sibling repo: [music-assassin-live](https://github.com/mAbEngineers/music-assassin-live)
+is the shippable Linux app built on whichever model wins here — PipeWire
+routing, streaming engine, UI, and `.deb` packaging.
+
 ---
 
 ## Known Limitation — Speech Enhancers Do Not Remove Music
