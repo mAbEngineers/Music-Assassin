@@ -50,7 +50,8 @@ if [ $# -eq 0 ]; then
     echo "  ./build.sh 0.4.0   - DEMUCS only (chunked, early prototype)"
     echo "  ./build.sh 0.4.1   - DEMUCS + Spleeter (chunked, INT8, full DSP)"
     echo "  ./build.sh 0.4.2   - DEMUCS + Spleeter + MDX-Net (vocals-only MDX-Net)"
-    echo "  ./build.sh 0.5.0   - CPU Streaming Edition (Current)"
+    echo "  ./build.sh 0.4.4   - + VAD gate + DeepFilterNet cleanup (Recommended)"
+    echo "  ./build.sh 0.5.0   - CPU Streaming Edition"
     echo ""
     echo "Examples:"
     echo "  ./build.sh 0.5.0"
@@ -68,12 +69,12 @@ BUILD_DIR="build/output_v${VERSION}"
 
 # Verify input is valid
 case $VERSION in
-    0.0.1|0.0.2|0.1.0|0.2.0|0.3.3|0.3.4|0.4.0|0.4.1|0.4.2|0.5.0)
+    0.0.1|0.0.2|0.1.0|0.2.0|0.3.3|0.3.4|0.4.0|0.4.1|0.4.2|0.4.4|0.5.0)
         # Valid version
         ;;
     *)
         echo -e "${RED}ERROR: Invalid version '${VERSION}'${NC}"
-        echo "Valid versions: 0.0.1, 0.0.2, 0.1.0, 0.2.0, 0.3.3, 0.3.4, 0.4.0, 0.4.1, 0.4.2, 0.5.0"
+        echo "Valid versions: 0.0.1, 0.0.2, 0.1.0, 0.2.0, 0.3.3, 0.3.4, 0.4.0, 0.4.1, 0.4.2, 0.4.4, 0.5.0"
         exit 1
         ;;
 esac
@@ -216,6 +217,15 @@ if [ -f "$executable_path" ]; then
             echo "Features: UVR-MDX-NET-Voc_FT + Kim_Vocal_2, fast on CPU, auto-download"
             echo "Requires: Python 3.9+ venv (audio-separator constraint)"
             echo "Install deps: pip install -r requirements/requirements_mdxnet_only.txt"
+            echo ""
+            ;;
+        0.4.4)
+            echo "Version 0.4.4: DEMUCS + MDX-Net + VAD + DeepFilterNet (Recommended)"
+            echo "Uses: Demucs/MDX-Net separation + Silero VAD silence gate + optional DeepFilterNet cleanup"
+            echo "Fix: global (not per-chunk) normalization, last-chunk fade-to-zero padding"
+            echo "Note: Spleeter/TensorFlow excluded from this build (PyInstaller+keras crash);"
+            echo "      run from source with setup_v044.sh if you need the Spleeter engine."
+            echo "Install deps: bash setup_v044.sh [venv_path]"
             echo ""
             ;;
         0.5.0)

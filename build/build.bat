@@ -38,7 +38,8 @@ if "%1"=="" (
     echo   build.bat 0.4.0   - DEMUCS Natural Vocals
     echo   build.bat 0.4.1   - DEMUCS/Spleeter Hybrid
     echo   build.bat 0.4.2   - DEMUCS/Spleeter Hybrid (memory-optimised)
-    echo   build.bat 0.5.0   - CPU Streaming Edition (Current)
+    echo   build.bat 0.4.4   - + VAD gate + DeepFilterNet cleanup (Recommended)
+    echo   build.bat 0.5.0   - CPU Streaming Edition
     echo.
     echo Example:
     echo   build.bat 0.5.0
@@ -53,9 +54,9 @@ set SPEC_FILE=build\MusicAssassin_v%VERSION%.spec
 set BUILD_DIR=build\output_v%VERSION%
 
 REM Validate version
-if not "%VERSION%"=="0.0.1" if not "%VERSION%"=="0.0.2" if not "%VERSION%"=="0.1.0" if not "%VERSION%"=="0.2.0" if not "%VERSION%"=="0.3.3" if not "%VERSION%"=="0.3.4" if not "%VERSION%"=="0.4.0" if not "%VERSION%"=="0.4.1" if not "%VERSION%"=="0.4.2" if not "%VERSION%"=="0.5.0" (
+if not "%VERSION%"=="0.0.1" if not "%VERSION%"=="0.0.2" if not "%VERSION%"=="0.1.0" if not "%VERSION%"=="0.2.0" if not "%VERSION%"=="0.3.3" if not "%VERSION%"=="0.3.4" if not "%VERSION%"=="0.4.0" if not "%VERSION%"=="0.4.1" if not "%VERSION%"=="0.4.2" if not "%VERSION%"=="0.4.4" if not "%VERSION%"=="0.5.0" (
     echo ERROR: Invalid version '%VERSION%'
-    echo Valid versions: 0.0.1, 0.0.2, 0.1.0, 0.2.0, 0.3.3, 0.3.4, 0.4.0, 0.4.1, 0.4.2, 0.5.0
+    echo Valid versions: 0.0.1, 0.0.2, 0.1.0, 0.2.0, 0.3.3, 0.3.4, 0.4.0, 0.4.1, 0.4.2, 0.4.4, 0.5.0
     pause
     exit /b 1
 )
@@ -167,6 +168,10 @@ if exist "%BUILD_DIR%\dist\MusicAssassin_v%VERSION%.exe" (
     ) else if "%VERSION%"=="0.4.2" (
         echo Version 0.4.2: DEMUCS/Spleeter Hybrid (memory-optimised)
         echo Uses: Selective lazy imports, chunked streaming export
+    ) else if "%VERSION%"=="0.4.4" (
+        echo Version 0.4.4: DEMUCS + MDX-Net + VAD + DeepFilterNet (Recommended)
+        echo Uses: Demucs/MDX-Net separation + Silero VAD silence gate + optional DeepFilterNet cleanup
+        echo Note: Spleeter/TensorFlow excluded from this build.
     ) else if "%VERSION%"=="0.5.0" (
         echo Version 0.5.0: CPU Streaming Edition (Current)
         echo Uses: DEMUCS only - htdemucs/htdemucs_ft/mdx_extra
