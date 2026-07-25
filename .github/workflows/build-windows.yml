@@ -1,0 +1,98 @@
+name: Build Windows executable
+
+# PyInstaller can't cross-compile: a Windows .exe has to be built on an
+# actual Windows machine, so this runs on GitHub's windows-latest runner.
+# Triggered manually (Actions tab -> Build Windows executable -> Run workflow)
+# or via `gh workflow run build-windows.yml`.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build (must match versions/MusicAssassinGUI_v<version>.py and build/MusicAssassin_v<version>.spec)"
+        required: true
+        default: "0.4.4"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install FFmpeg
+        run: choco install ffmpeg -y
+
+      - name: Install CPU-only torch (avoids bundling multi-GB unused CUDA libs)
+        run: |
+          python -m pip install --upgrade pip
+          pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio torchvision
+
+      - name: Install separation/inference deps
+        run: |
+          pip install "demucs>=4.0.0" "audio-separator>=0.17" "numpy>=2.0.0" `
+            "scipy>=1.5.0" "soundfile>=0.12.0" "ffmpeg-python>=0.2.0" `
+            "librosa>=0.8.0" "psutil>=5.9.0" "onnxruntime>=1.17.0" `
+            "sherpa-onnx>=1.13.0" appdirs
+
+      - name: Install DeepFilterNet (Rust extension; rustc/cargo ship on windows-latest)
+        run: pip install "deepfilternet>=0.5.6"
+
+      - name: Reconcile numpy after deepfilternet's <2.0 pin
+        run: pip install "numpy==2.4.6"
+
+      - name: Apply torchaudio.backend.common shim (torchaudio 2.2+ removed it; deepfilternet still imports it)
+        shell: python
+        run: |
+          import torchaudio, os, pathlib
+          backend_dir = pathlib.Path(torchaudio.__file__).parent / "backend"
+          backend_dir.mkdir(exist_ok=True)
+          (backend_dir / "__init__.py").touch()
+          (backend_dir / "common.py").write_text(
+              '"""Compatibility shim: torchaudio.backend.common removed in torchaudio 2.2."""\n'
+              "from dataclasses import dataclass\n\n"
+              "@dataclass\n"
+              "class AudioMetaData:\n"
+              "    sample_rate: int\n"
+              "    num_frames: int\n"
+              "    num_channels: int\n"
+              "    bits_per_sample: int\n"
+              "    encoding: str\n"
+          )
+          print("shim written to", backend_dir / "common.py")
+
+      - name: Warm up offline model caches (Demucs via HF hub, Silero VAD via torch hub)
+        shell: python
+        run: |
+          import demucs.pretrained as p
+          for name in ["htdemucs", "htdemucs_ft", "mdx_extra"]:
+              print("downloading", name)
+              p.get_model(name)
+          import torch
+          torch.hub.load("snakers4/silero-vad", "silero_vad", onnx=False, trust_repo=True)
+          print("warm-up complete")
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+
+      - name: Build executable
+        run: |
+          pyinstaller "build/MusicAssassin_v${{ inputs.version }}.spec" `
+            --distpath "build/output_v${{ inputs.version }}/dist" `
+            --workpath "build/output_v${{ inputs.version }}/build"
+
+      - name: Verify build
+        shell: pwsh
+        run: |
+          $exe = "build/output_v${{ inputs.version }}/dist/MusicAssassin_v${{ inputs.version }}.exe"
+          if (-not (Test-Path $exe)) { throw "Build failed: $exe not found" }
+          $size = (Get-Item $exe).Length / 1GB
+          Write-Host "Built $exe ($([math]::Round($size, 2)) GB)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicAssassin_v${{ inputs.version }}_windows
+          path: build/output_v${{ inputs.version }}/dist/MusicAssassin_v${{ inputs.version }}.exe
+          retention-days: 14
