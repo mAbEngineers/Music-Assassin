@@ -70,22 +70,24 @@ if os.path.isdir(os.path.join(_torch_hub, 'snakers4_silero-vad_master')):
                              'torch_home/hub/snakers4_silero-vad_master'))
 
 # demucs>=4.1 fetches htdemucs/htdemucs_ft/mdx_extra from the HuggingFace hub
-# (adefossez/*) rather than torch.hub — bundle those repos too so the default
-# separator works fully offline. HF_HOME is set by the runtime hook.
+# (adefossez/*) rather than torch.hub — bundle the default 'htdemucs' repo so
+# the app works fully offline out of the box. HF_HOME is set by the runtime
+# hook. htdemucs_ft/mdx_extra are NOT bundled (960MB combined) — like the
+# MDX-Net/UVR models, they auto-download on first use if the user switches to
+# them; this keeps the release artifact under GitHub's 2GB asset limit.
 _hf_hub = os.path.expanduser('~/.cache/huggingface/hub')
 _hf_hub_data = []
 if os.path.isdir(_hf_hub):
     for _entry in os.listdir(_hf_hub):
-        if _entry.startswith('models--adefossez--'):
+        if _entry == 'models--adefossez--HTDemucs':
             _hf_hub_data.append((os.path.join(_hf_hub, _entry),
                                   os.path.join('hf_home/hub', _entry)))
 
-# Repo-local ONNX enhancer/separator models (sherpa-onnx, SpeechDenoiser, ...)
-# _MODELS_DIR in the app resolves to {bundle root}/models at runtime.
+# Repo-local ONNX enhancer models (sherpa-onnx, SpeechDenoiser, ...) are NOT
+# bundled (355MB, all optional/off-by-default — enhancer_choice defaults to
+# 'none') to stay under the release size limit. Each enhancer function
+# already prints a one-time download link when its model file is missing.
 _local_models = []
-_local_models_src = os.path.join(_repo_root, 'models')
-if os.path.isdir(_local_models_src):
-    _local_models = [(_local_models_src, 'models')]
 
 # DeepFilterNet's downloaded checkpoint — seeded into the real OS cache dir
 # by runtime_hook_v0.4.4.py on first launch (appdirs path isn't overridable

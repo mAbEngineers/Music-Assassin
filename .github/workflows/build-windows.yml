@@ -63,13 +63,14 @@ jobs:
           )
           print("shim written to", backend_dir / "common.py")
 
-      - name: Warm up offline model caches (Demucs via HF hub, Silero VAD via torch hub)
+      - name: Warm up offline model caches (default Demucs model via HF hub, Silero VAD via torch hub)
+        # Only the default 'htdemucs' model is pre-cached/bundled — htdemucs_ft
+        # and mdx_extra add ~960MB combined and auto-download on first use if
+        # selected, keeping the release artifact under GitHub's 2GB limit.
         shell: python
         run: |
           import demucs.pretrained as p
-          for name in ["htdemucs", "htdemucs_ft", "mdx_extra"]:
-              print("downloading", name)
-              p.get_model(name)
+          p.get_model("htdemucs")
           import torch
           torch.hub.load("snakers4/silero-vad", "silero_vad", onnx=False, trust_repo=True)
           print("warm-up complete")
