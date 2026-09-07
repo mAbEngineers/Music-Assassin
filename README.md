@@ -5,6 +5,31 @@ example, stripping the background music out of an anime episode or a movie so
 only dialogue and sound effects remain. It works entirely offline, on CPU, using
 open-source AI models. No cloud services, no paid APIs.
 
+## Download — v0.4.4 (latest)
+
+Prebuilt and ready to run. No Python install needed.
+
+| Platform | File | Size |
+|---|---|---|
+| **Windows** 10/11 (x64) | [`MusicAssassin_v0.4.4.exe`](https://github.com/mAbEngineers/Music-Assassin/releases/download/v0.4.4/MusicAssassin_v0.4.4.exe) | 393 MB |
+| **Ubuntu / Debian** (x64) | [`MusicAssassin_v0.4.4.deb`](https://github.com/mAbEngineers/Music-Assassin/releases/download/v0.4.4/MusicAssassin_v0.4.4.deb) | 1.5 GB |
+| **Linux** (x64, portable) | [`MusicAssassin_v0.4.4`](https://github.com/mAbEngineers/Music-Assassin/releases/download/v0.4.4/MusicAssassin_v0.4.4) | 1.5 GB |
+
+- **Windows** — run the `.exe` directly, no install.
+- **Debian/Ubuntu** — `sudo dpkg -i MusicAssassin_v0.4.4.deb`, then run `music-assassin`.
+- **Linux portable** — `chmod +x MusicAssassin_v0.4.4 && ./MusicAssassin_v0.4.4`.
+
+Every build is CPU-only and runs fully offline. The default Demucs model
+(`htdemucs`) and Silero VAD are bundled; the alternate Demucs variants, the
+MDX-Net/UVR models and the optional enhancers download once on first use, which
+is what keeps the artifact under GitHub's 2 GB limit. Spleeter/TensorFlow is not
+included in the binaries — [run from source](#installation--usage) if you need
+that engine.
+
+[All releases →](https://github.com/mAbEngineers/Music-Assassin/releases)
+
+---
+
 This README explains what the project does, which version to use, and exactly
 what changed release-by-release — from the first proof-of-concept script to the
 current AI-powered pipeline.
@@ -224,6 +249,9 @@ python versions/MusicAssassinGUI_v0.5.1.py
 This repo doubles as a research lab for the underlying models — the docs below
 are the detailed record behind the summaries in this README:
 
+- **`docs/ROADMAP.md`** — what this repo does next and why: the separator
+  candidates, the corpus/harness work that has to precede them, and the
+  open decisions. Start here.
 - **`docs/COMPREHENSIVE_METHOD_COMPARISON.md`** — master lookup table of every model/technique tried or researched (separators, enhancers, VAD, DSP, acceleration).
 - **`docs/MODEL_BENCHMARKS_v0.4.4.md`** — the v0.4.4 benchmark pass: speed/RAM measurements on real content.
 - **`docs/REALTIME_FILTER_RESEARCH.md`** — architecture research for turning this into a live, system-wide music filter (latency budgets, OS integration).
