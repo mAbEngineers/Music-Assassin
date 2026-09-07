@@ -32,19 +32,38 @@ steady-state throughput a persistent process would see.
 |---|---|---|---|---|---|---|---|
 | **MDX-Net UVR-MDX-NET-Voc_FT** | audio-separator / onnxruntime (ONNX) | 66 MB | **~3.3 GB** (measured, stable) | **134.7 s** (measured) | 0.45× (slower than real-time) | Good — recommended default; kept SFX/dialogue intact in prior testing | ⚠️ Partial — chunked (~200-400 ms internal windows), not a true streaming API, but the ONNX graph itself is small/fast enough to be re-engineered for it |
 | MDX-Net Kim_Vocal_2 | audio-separator / onnxruntime (ONNX) | 130 MB | Not tested | Not tested | — | Not evaluated this session | Same caveat as Voc_FT — untested RAM/speed trade-off from the larger model |
-| **DEMUCS htdemucs (INT8)** | torch (single transformer model) | ~80 MB quantized | **>6-7 GB and still climbing** — OOM-killed twice at 5 GB and 6 GB caps before finishing even the 20 s clip | Did not complete | N/A | Previously rated good by ear (didn't cut background SFX) — but see RAM finding | ❌ No — one-shot forward pass over the whole segment, no internal streaming; the transformer has a fixed internal context length (`training_length`) so its memory can't be reduced by asking for a shorter internal segment (confirmed: doing so throws a reshape error, see Appendix) |
-| DEMUCS htdemucs_ft | torch (BagOfModels ×4 sub-models, run sequentially) | ~80 MB ×4 quantized | Not tested live (too risky after the htdemucs incident) — estimated similar peak *per sub-model* as htdemucs (sub-models run one at a time, not stacked), so roughly the same peak, ~4× the wall-clock time | Estimated ~4× htdemucs | N/A | Estimated marginal quality gain over htdemucs (ensemble average) | ❌ No |
-| DEMUCS mdx_extra | torch (BagOfModels ×4) | similar | Same estimate as htdemucs_ft | Estimated ~4× htdemucs | Labeled "Best" in the app's own UI; unverified this session | ❌ No |
+| **DEMUCS htdemucs (INT8)** | torch (single transformer model) | ~80 MB quantized | **~1.24 GB** *(corrected 2026-09-08 — was recorded as ">6-7 GB, OOM-killed")* | **10.5 s / 60 s chunk (RTF 0.177)** ⚠️ measured at 4 threads on a 32-core box, not the 4-core reference | N/A | Previously rated good by ear (didn't cut background SFX) | ⚠️ Partial — offline chunked, no streaming API, but comfortably faster than real time. The old "memory can't be reduced" claim was backwards: the app was *forcing* a 60 s context via `segment=CHUNK_SEC`, far **above** the model's native 7.8 s `training_length`. Removing that kwarg drops peak RSS ~12×. |
+| DEMUCS htdemucs_ft | torch (BagOfModels ×4 sub-models, run sequentially) | ~80 MB ×4 quantized | Not tested live — the stated reason ("too risky after the htdemucs incident") is void as of 2026-09-08, that incident being the `segment=60` bug; — estimated similar peak *per sub-model* as htdemucs (sub-models run one at a time, not stacked), so roughly the same peak, ~4× the wall-clock time | Estimated ~4× htdemucs | N/A | Estimated marginal quality gain over htdemucs (ensemble average) | ❌ No |
+| DEMUCS mdx_extra | torch (BagOfModels ×4) | similar | Same estimate as htdemucs_ft | Estimated ~4× htdemucs | — | Labeled "Best" in the app's own UI; unverified this session | ❌ No |
 | Spleeter (4stems) | TensorFlow | ~150 MB | Not tested live — TF import alone adds 500 MB–1.5 GB before any separation happens (confirmed empirically earlier this session; this cost has now been made *lazy* — see Fixes below) | Not tested | — | Historically weaker for anime-style vocals (general-purpose 4-stem model, not tuned for the vocal/instrumental split this app needs) | ❌ No — heavyweight runtime, no streaming design |
 | **sherpa-onnx Spleeter 2-stem int8** *(added 2026-07-04)* | sherpa-onnx C++ runtime | 2 × 26 MB | **~600 MB** (measured) | **4.0 s** (measured, RTF 0.067 — 1 thread suffices; 4 threads no faster) | **15× faster than real-time** | Architecturally below MDX — listening files in `test_outputs/` (`bench_dialogue07m00_sherpa_spleeter_i8_*.wav`) for by-ear judgment | ✅ **Yes in practice** — offline API, but at RTF 0.067 a 1-2 s chunked live loop keeps up easily; first separator measured on this machine that can |
 | **sherpa-onnx UVR Voc_FT** *(added 2026-07-04)* | sherpa-onnx C++ runtime | 64 MB | ~4.3 GB (measured) | 84.4 s @ 4 threads (measured, RTF 1.41); 143.4 s @ 1 thread | 0.71× | Identical weights to audio-separator's Voc_FT — same output quality, 1.6× faster from runtime efficiency alone | ❌ No — still slower than real-time on this CPU |
 
-**Read on RAM peaks:** the *sole* practical, safe separator on this class of machine
-right now is **MDX-Net (audio-separator/onnxruntime)**. htdemucs's real CPU peak is
-roughly **5-6× higher** than the ~1.2 GB estimate in this project's earlier
-(12-day-old, partly-estimated) metrics memory — that old number appears to have
-never been measured against this exact `apply_model` call shape
-(`segment=60, overlap=0.25`, single-shot). This document supersedes it for DEMUCS.
+**Read on RAM peaks — CORRECTED 2026-09-08.** The paragraph below originally
+concluded that MDX-Net was "the *sole* practical, safe separator on this class of
+machine" and that htdemucs's real peak was "5-6× higher" than the ~1.2 GB estimate
+in earlier metrics.
+
+**That conclusion was inverted.** The original text had already identified the
+decisive variable — it noted the old estimate "appears to have never been measured
+against this exact `apply_model` call shape (`segment=60, overlap=0.25`,
+single-shot)" — but read it as the *estimate* being wrong rather than the *call
+shape*. It was the call shape. Passing `segment=60` overrides htdemucs's native
+7.8 s `training_length` with a 60 s context, and transformer attention is quadratic
+in context length.
+
+Measured same-machine A/B on one 60 s chunk, after removing the kwarg:
+
+| | `segment=60` (as shipped) | no `segment` (fixed) |
+|---|---|---|
+| result | RuntimeError in `htdemucs.forward` | OK |
+| peak RSS | 14,929 MB | **1,237 MB** |
+| wall time | 28.3 s, then crashed | **10.5 s** (RTF 0.177) |
+
+The ~1.2 GB estimate was accurate. htdemucs is practical on this class of machine,
+and at RTF 0.177 it is roughly 2.5× faster than MDX-Net Voc_FT (RTF 0.45), the
+app's current default. Speed figure measured at 4 threads on a 32-core box —
+re-measure on the 4-core reference before ranking. See `ROADMAP.md` §1.4.
 
 ---
 
