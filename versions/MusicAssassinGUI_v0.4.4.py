@@ -517,10 +517,22 @@ def separate_with_demucs(waveform, sr=44100):
             def _worker(tensor=t):
                 try:
                     with no_grad():
+                        # No segment= here, deliberately. CHUNK_SEC is OUR outer
+                        # chunk — a bound on the numpy array we hold in RAM.
+                        # demucs's `segment` is the model's INTERNAL context
+                        # window, and conflating the two crashes htdemucs: it is
+                        # a transformer with a fixed training_length of 7.8 s, so
+                        # segment=60 makes apply_model pad the input out to 60 s
+                        # and then reshape it back to 7.8 s, raising
+                        #   shape '[1, 4, -1, 343980]' is invalid for input of
+                        #   size 21168000                (= 1*4*2*60*44100)
+                        # Omitting it lets each model use its native
+                        # model.segment and sub-split this chunk itself, which is
+                        # both correct and far cheaper — attention cost grows
+                        # quadratically with the context length.
                         _result[0] = apply_model(
                             model, tensor,
                             device=dev,
-                            segment=CHUNK_SEC,
                             overlap=0.25,
                             progress=False,
                             num_workers=0,
