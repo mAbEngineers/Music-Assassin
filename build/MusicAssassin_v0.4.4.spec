@@ -62,9 +62,23 @@ if sys.platform == 'linux':
 # so both need to land at {bundle}/torch_home/hub/... (see runtime_hook).
 _torch_hub = os.path.expanduser('~/.cache/torch/hub')
 _torch_hub_data = []
-if os.path.isdir(os.path.join(_torch_hub, 'checkpoints')):
-    _torch_hub_data.append((os.path.join(_torch_hub, 'checkpoints'),
-                             'torch_home/hub/checkpoints'))
+# Only the DEFAULT model's checkpoint, mirroring the HuggingFace filter below.
+# Bundling this whole directory is what made the 2026-07 artifact 1.5 GB: on
+# the build machine it held 1.4 GB of .th weights -- htdemucs_ft's four
+# sub-models and mdx_extra's three -- i.e. exactly the models the release
+# notes say are NOT bundled, plus any unrelated model another project on the
+# same machine happened to cache there (one build host had a stray 1.26 GB
+# model.pt). demucs>=4.1 fetches htdemucs from the HuggingFace hub anyway, so
+# on a clean machine this directory contributes nothing; the filter exists so
+# a machine with a populated torch-hub cache produces the same artifact as a
+# clean one.
+_HTDEMUCS_CKPT_PREFIX = '955717e8'   # demucs/remote/htdemucs.yaml -> models: ['955717e8']
+_torch_ckpt_dir = os.path.join(_torch_hub, 'checkpoints')
+if os.path.isdir(_torch_ckpt_dir):
+    for _ck in sorted(os.listdir(_torch_ckpt_dir)):
+        if _ck.startswith(_HTDEMUCS_CKPT_PREFIX):
+            _torch_hub_data.append((os.path.join(_torch_ckpt_dir, _ck),
+                                     'torch_home/hub/checkpoints'))
 if os.path.isdir(os.path.join(_torch_hub, 'snakers4_silero-vad_master')):
     _torch_hub_data.append((os.path.join(_torch_hub, 'snakers4_silero-vad_master'),
                              'torch_home/hub/snakers4_silero-vad_master'))
