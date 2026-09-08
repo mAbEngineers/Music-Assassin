@@ -31,11 +31,24 @@ jobs:
           pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio torchvision
 
       - name: Install separation/inference deps
+        # audioread is pinned explicitly on purpose. audio-separator imports it
+        # (uvr_lib_v5/spec_utils.py) but does not declare it, and it used to
+        # arrive transitively via librosa. librosa 1.0 dropped that dependency,
+        # so a fresh install gets neither and `from audio_separator.separator
+        # import Separator` raises ModuleNotFoundError. The app checks MDX-Net
+        # with importlib.util.find_spec, which still returns True, so the engine
+        # is offered in the UI and only fails when the user starts a job.
         run: |
           pip install "demucs>=4.0.0" "audio-separator>=0.17" "numpy>=2.0.0" `
             "scipy>=1.5.0" "soundfile>=0.12.0" "ffmpeg-python>=0.2.0" `
             "librosa>=0.8.0" "psutil>=5.9.0" "onnxruntime>=1.17.0" `
-            "sherpa-onnx>=1.13.0" appdirs
+            "sherpa-onnx>=1.13.0" appdirs audioread
+
+      - name: Verify MDX-Net actually imports
+        # find_spec-based detection cannot catch a broken transitive import,
+        # so assert the real import here rather than shipping a build whose
+        # recommended engine fails at run time.
+        run: python -c "from audio_separator.separator import Separator; print('MDX-Net import OK')"
 
       - name: Install DeepFilterNet (Rust extension; rustc/cargo ship on windows-latest)
         run: pip install "deepfilternet>=0.5.6"
