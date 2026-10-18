@@ -113,17 +113,68 @@ _silero_vad_model = None
 _silero_get_ts    = None
 
 # ── Logging setup ────────────────────────────────────────────────────────────
-_LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "music_assassin.log")
+# The log must outlive the process. Writing it next to __file__ is wrong in a
+# PyInstaller onefile build: __file__ then lives under sys._MEIPASS, a temp dir
+# the bootloader deletes on exit -- so every crash took its own log with it.
+# Keep it in the XDG state dir instead, which survives the process.
+def _resolve_log_dir():
+    base = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
+    for cand in (os.path.join(base, "music-assassin"),
+                 os.path.join(os.path.expanduser("~"), ".music-assassin"),
+                 os.path.dirname(os.path.abspath(__file__))):
+        try:
+            os.makedirs(cand, exist_ok=True)
+            _probe = os.path.join(cand, ".writable")
+            with open(_probe, "w"):
+                pass
+            os.unlink(_probe)
+            return cand
+        except OSError:
+            continue
+    return os.path.abspath(".")
 
+
+_LOG_PATH = os.path.join(_resolve_log_dir(), "music_assassin.log")
+
+# stderr as well as the file. traceback.print_exc() writes to stderr, and
+# sys.stdout is rebound to the GUI widget later, so without this handler a
+# crash leaves no trace either on screen or on disk.
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s  %(levelname)-7s  %(message)s",
     datefmt="%H:%M:%S",
     handlers=[
         logging.FileHandler(_LOG_PATH, encoding="utf-8"),
+        logging.StreamHandler(sys.__stderr__),
     ],
 )
 _log = logging.getLogger("MusicAssassin")
+
+
+def _log_uncaught(exc_type, exc_value, exc_tb):
+    """Last resort: an uncaught exception has to reach the log file."""
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+        return
+    _log.critical("Uncaught exception", exc_info=(exc_type, exc_value, exc_tb))
+
+
+sys.excepthook = _log_uncaught
+
+# Separation runs on a worker thread, and a thread killed by an exception never
+# reaches sys.excepthook -- it needs its own hook.
+import threading as _threading
+
+
+def _log_uncaught_thread(args):
+    if issubclass(args.exc_type, SystemExit):
+        return
+    _log.critical("Uncaught exception in thread %s",
+                  getattr(args.thread, "name", "?"),
+                  exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
+
+
+_threading.excepthook = _log_uncaught_thread
 
 # ffmpeg-python and torch log a lot of noise at WARNING level — keep those quiet
 # in our log file so only real warnings from our own code appear.
