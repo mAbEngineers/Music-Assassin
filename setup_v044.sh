@@ -49,10 +49,12 @@ echo "[2/4] Installing Python packages..."
     "psutil>=5.9.0" \
     -q
 
-# ONNX inference
+# ONNX inference (openvino + pyloudnorm: fast engine, fast_separation.py)
 "$PIP" install \
     "onnxruntime>=1.17.0" \
     "sherpa-onnx>=1.13.0" \
+    "openvino>=2024.0" \
+    "pyloudnorm>=0.1.0" \
     -q
 
 # Speech enhancement (Rust compile — takes 3-5 min on first install)
@@ -170,6 +172,7 @@ checks = {
     "df":               "DeepFilterNet enhancer",
     "sherpa_onnx":      "DPDFNet / GTCRN enhancers",
     "onnxruntime":      "ONNX Runtime (MDX-Net + SpeechDenoiser)",
+    "openvino":         "OpenVINO (fast engine: Voc_FT BF16, MRX)",
     "scipy":            "DSP filters",
     "soundfile":        "WAV I/O",
 }
