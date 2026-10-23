@@ -42,7 +42,8 @@ jobs:
           pip install "demucs>=4.0.0" "audio-separator>=0.17" "numpy>=2.0.0" `
             "scipy>=1.5.0" "soundfile>=0.12.0" "ffmpeg-python>=0.2.0" `
             "librosa>=0.8.0" "psutil>=5.9.0" "onnxruntime>=1.17.0" `
-            "sherpa-onnx>=1.13.0" appdirs audioread
+            "sherpa-onnx>=1.13.0" "openvino>=2024.0" "pyloudnorm>=0.1.0" `
+            appdirs audioread
 
       - name: Verify MDX-Net actually imports
         # find_spec-based detection cannot catch a broken transitive import,
@@ -87,6 +88,21 @@ jobs:
           import torch
           torch.hub.load("snakers4/silero-vad", "silero_vad", onnx=False, trust_repo=True)
           print("warm-up complete")
+
+      - name: Warm up fast-engine models (Voc_FT, MRX, CDX23; bundled by the spec)
+        run: python -c "import fast_separation as f; [print(f.model_path(k)) for k in f._MODELS]"
+
+      - name: Verify the fast engine runs on OpenVINO
+        # The engine silently falls back to onnxruntime when OpenVINO is
+        # missing or fails to compile, which would ship a build at a fraction
+        # of the intended speed. Fail here instead.
+        shell: python
+        run: |
+          import numpy as np, fast_separation as f
+          out = f.separate_vocals_mdx(np.zeros(44100 * 3, np.float32))
+          backend = f._NET_CACHE[next(iter(f._NET_CACHE))].backend
+          print("fast engine backend:", backend)
+          assert backend.startswith("openvino"), backend
 
       - name: Install PyInstaller
         run: pip install pyinstaller

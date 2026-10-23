@@ -203,7 +203,9 @@ logging.getLogger("torch").setLevel(logging.ERROR)
 _log.info("=" * 60)
 _log.info("Music Assassin v0.4.4  —  session start")
 _log.info(f"Log file: {_LOG_PATH}")
-_log.info(f"DEMUCS available: {DEMUCS_AVAILABLE}  |  Spleeter: {SPLEETER_AVAILABLE}  |  MDX-Net: {AUDIO_SEPARATOR_AVAILABLE}")
+_log.info(f"DEMUCS available: {DEMUCS_AVAILABLE}  |  Spleeter: {SPLEETER_AVAILABLE}  |  MDX-Net: {AUDIO_SEPARATOR_AVAILABLE}"
+          f"  |  Fast engine: {FAST_ENGINE_AVAILABLE}"
+          f" ({'openvino' if importlib.util.find_spec('openvino') else 'onnxruntime'})")
 
 
 class PrintLogger:
@@ -2519,6 +2521,7 @@ if __name__ == "__main__":
     print("=" * 55)
     print("Music Assassin Pro v0.4.4 - MDX-Net/DEMUCS/SPLEETER")
     print("=" * 55)
+    print(f"Fast engine:         {FAST_ENGINE_AVAILABLE}  (OpenVINO: {importlib.util.find_spec('openvino') is not None})")
     print(f"MDX-Net available:   {AUDIO_SEPARATOR_AVAILABLE}")
     print(f"DEMUCS available:    {DEMUCS_AVAILABLE}")
     print(f"Spleeter available:  {SPLEETER_AVAILABLE}")

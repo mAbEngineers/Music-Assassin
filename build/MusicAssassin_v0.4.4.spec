@@ -1,8 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
 PyInstaller Spec File for Music-Assassin v0.4.4
-Demucs + MDX-Net separation, with Silero VAD gate and optional
-DeepFilterNet / sherpa-onnx enhancer cleanup.
+Fast engine (OpenVINO Voc_FT / MRX / CDX23, "keep sound effects") + Demucs +
+MDX-Net separation, with Silero VAD gate and optional DeepFilterNet /
+sherpa-onnx enhancer cleanup.
 
 Spleeter/TensorFlow are intentionally NOT bundled: PyInstaller's tensorflow
 hook segfaults (SIGSEGV, exit -11) collecting submodules for
@@ -122,6 +123,38 @@ _aseg_datas, _aseg_bins, _aseg_hidden = collect_all('audio_separator')
 _df_pkg_datas, _df_pkg_bins, _df_pkg_hidden = collect_all('df')
 _libdf_datas, _libdf_bins, _libdf_hidden = collect_all('libdf')
 
+# Fast engine (fast_separation.py): OpenVINO runs Voc_FT and MRX on the CPU.
+# PyInstaller has no hook for openvino, so it is collected here. libs/ has to
+# stay together -- libopenvino looks for its plugins next to itself. Dropped:
+# the GPU/NPU plugins, the GPU kernel-tuning cache.json, and the non-ONNX
+# model frontends (~75 MB); the engine only ever loads ONNX models on "CPU".
+_OV_UNUSED = ('intel_gpu_plugin', 'intel_npu_plugin', 'tensorflow', 'pytorch',
+              'paddle', 'jax', 'gguf')
+
+def _ov_unused(path):
+    name = os.path.basename(path)
+    return 'openvino' in path and (name == 'cache.json' or any(u in name for u in _OV_UNUSED))
+
+_ov_datas, _ov_bins, _ov_hidden = collect_all('openvino')
+_ov_hidden = [m for m in _ov_hidden
+              if not any(m.startswith('openvino.frontend.' + u) for u in _OV_UNUSED)]
+
+# Fast-engine models: bundled so the default separator and "Keep sound
+# effects" work offline (runtime hook sets MA_BUNDLED_MODEL_DIR). Taken from
+# the build machine's download cache; files of the wrong size are skipped so
+# a half-finished download is never shipped. Warm the cache first:
+#   python -c "import fast_separation as f; [f.model_path(k) for k in f._MODELS]"
+sys.path.insert(0, _repo_root)
+import fast_separation as _fs
+_ma_models = []
+for _key, _m in _fs._MODELS.items():
+    _p = os.path.join(_fs.model_dir(), _m['file'])
+    if os.path.isfile(_p) and os.path.getsize(_p) == _m['size']:
+        _ma_models.append((_p, 'ma_models'))
+    else:
+        print(f"WARNING: fast-engine model {_m['file']} not in {_fs.model_dir()} -- "
+              f"the build will download it on first use")
+
 # ============================================================================
 # ANALYSIS
 # ============================================================================
@@ -137,6 +170,7 @@ a = Analysis(
         + _aseg_bins
         + _df_pkg_bins
         + _libdf_bins
+        + [b for b in _ov_bins if not _ov_unused(b[0])]
     ),
     datas=[
         *collect_data_files('demucs'),
@@ -147,6 +181,8 @@ a = Analysis(
         *_aseg_datas,
         *_df_pkg_datas,
         *_libdf_datas,
+        *[d for d in _ov_datas if not _ov_unused(d[0])],
+        *_ma_models,
         *_torch_hub_data,
         *_hf_hub_data,
         *_local_models,
@@ -162,7 +198,10 @@ a = Analysis(
         *_aseg_hidden,
         *_df_pkg_hidden,
         *_libdf_hidden,
+        *_ov_hidden,
         *collect_submodules('audio_separator'),
+        'fast_separation',
+        'pyloudnorm',
         'torch',
         'torch.nn',
         'torch.utils',
@@ -220,12 +259,18 @@ a = Analysis(
         'tensorflow',
         'keras',
         'spleeter',
+        *[f'openvino.frontend.{u}' for u in ('tensorflow', 'pytorch', 'paddle', 'jax')],
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
     noarchive=False,
 )
+
+# Dependency analysis can re-add an unused OpenVINO library on its own
+# (e.g. as a dependency of a collected extension); drop those here too.
+a.binaries = [b for b in a.binaries if not _ov_unused(b[1])]
+a.datas = [d for d in a.datas if not _ov_unused(d[1])]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 

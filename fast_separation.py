@@ -27,6 +27,8 @@ Falls back to onnxruntime when OpenVINO is not installed. Overrides:
                                  results on some Ryzen 9000 CPUs -- set f32 if
                                  output ever sounds wrong)
   MA_MODEL_DIR=<path>            model cache directory
+  MA_BUNDLED_MODEL_DIR=<path>    read-only models shipped with a packaged
+                                 build (set by the PyInstaller runtime hook)
 """
 
 import os
@@ -115,13 +117,16 @@ def model_path(key, log=print):
     """Return the local path of a model, downloading it on first use."""
     m = _MODELS[key]
     path = os.path.join(model_dir(), m["file"])
-    if os.path.isfile(path) and os.path.getsize(path) == m["size"]:
-        return path
-    # Reuse audio-separator's copy of Voc_FT if it is already on disk.
+    candidates = [path]
+    bundled = os.environ.get("MA_BUNDLED_MODEL_DIR")
+    if bundled:
+        candidates.insert(0, os.path.join(bundled, m["file"]))
     if key == "voc_ft":
-        alt = os.path.join("/tmp/audio-separator-models", m["file"])
-        if os.path.isfile(alt) and os.path.getsize(alt) == m["size"]:
-            return alt
+        # Reuse audio-separator's copy of Voc_FT if it is already on disk.
+        candidates.append(os.path.join("/tmp/audio-separator-models", m["file"]))
+    for c in candidates:
+        if os.path.isfile(c) and os.path.getsize(c) == m["size"]:
+            return c
     log(f"  Downloading {m['file']} ({m['size'] / 1e6:.0f} MB)...")
     tmp = path + ".part"
     urllib.request.urlretrieve(m["url"], tmp)
