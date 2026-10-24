@@ -27,6 +27,12 @@ if getattr(sys, 'frozen', False):
     # entire cache root, so the bundled repo snapshots are found offline.
     os.environ['HF_HOME'] = os.path.join(base, 'hf_home')
 
+    # ---- Fast engine models (fast_separation.py) -----------------------
+    # Voc_FT, MRX and CDX23 ship in the bundle so the default separator and
+    # "Keep sound effects" work offline; fast_separation checks this
+    # read-only directory before its download cache.
+    os.environ['MA_BUNDLED_MODEL_DIR'] = os.path.join(base, 'ma_models')
+
     # ---- Spleeter models ----------------------------------------------
     # Spleeter reads MODEL_PATH to locate pretrained model directories.
     os.environ['MODEL_PATH'] = os.path.join(base, 'pretrained_models')

@@ -30,3 +30,9 @@ venv/
 # Test audio outputs
 test_outputs/
 handoff/
+
+# Session transcript — keep locally, never commit (5772-line transcript)
+dialog.md
+
+# Quality harness generated reports (regenerate with run_quality.py)
+quality_harness/reports/

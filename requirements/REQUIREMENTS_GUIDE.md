@@ -25,6 +25,8 @@ Best balance of quality, speed, and compatibility.
 pip install -r requirements.txt
 ```
 
+For v0.4.4, `setup_v044.sh` is the tested route. `requirements.txt` now includes **openvino** (the fast separation engine; without it the engine falls back to onnxruntime, at 2× or more slower) and **pyloudnorm**.
+
 Or with GPU support:
 ```bash
 pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118

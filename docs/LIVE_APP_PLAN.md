@@ -1,5 +1,7 @@
 # Music Assassin Live — App Packaging & Repo Split Plan
 
+> **Status (2026-10-23):** this is the original plan, kept for history. The split happened. The maintained versions are in the `music-assassin-live` repo: `docs/ARCHITECTURE.md` (with later corrections) and `docs/ROADMAP.md`. For sound effects in the live app, see `LIVE_SFX_HANDOVER.md`.
+
 > **Product goal:** a "volume booster"-style app. One toggle. When ON, all device
 > output audio is intercepted, music is stripped, and the result plays through the
 > speaker — no manual routing, no device pickers, no per-app setup.

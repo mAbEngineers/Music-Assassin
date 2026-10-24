@@ -21,7 +21,7 @@ v0.4.4 audio fixes (inherited):
 + FIX: last-chunk fade-to-zero padding to reduce model boundary artifacts
 """
 
-import os, sys, gc, time, logging, math
+import os, sys, gc, time, logging, math, threading
 
 # Set Tcl/Tk library paths if not already set (Linux only — paths differ per OS)
 os.environ.setdefault("TCL_LIBRARY", "/usr/share/tcltk/tcl8.6")
@@ -65,6 +65,17 @@ if not SPLEETER_AVAILABLE:
 if not AUDIO_SEPARATOR_AVAILABLE:
     print("WARNING: audio-separator not installed. MDX-Net models unavailable.")
 
+# Fast engine (fast_separation.py): Voc_FT on OpenVINO BF16/FP32, MRX and
+# CDX23 dialogue/music/effects. Imported lazily like the other separators.
+try:
+    import fast_separation
+    FAST_ENGINE_AVAILABLE = fast_separation.is_available()
+except ImportError:
+    fast_separation = None
+    FAST_ENGINE_AVAILABLE = False
+if not FAST_ENGINE_AVAILABLE:
+    print("INFO: fast engine unavailable (needs torch + openvino or onnxruntime).")
+
 VAD_AVAILABLE    = importlib.util.find_spec('torch') is not None        # Silero VAD uses torch hub
 DF_AVAILABLE     = importlib.util.find_spec('df') is not None           # pip install deepfilternet
 SHERPA_AVAILABLE = importlib.util.find_spec('sherpa_onnx') is not None  # pip install sherpa-onnx
@@ -91,12 +102,20 @@ if not OV_AVAILABLE:
 files = []
 process1 = process2 = separator = do = 0
 sample_rate = 44100
-b1 = b2 = f1 = a1 = listbox = inprogressframe = progress = status_label = mode_selector = separator_selector = quantize_var = vad_var = df_var = enh_selector = ov_var = tgate_var = None
+b1 = b2 = f1 = a1 = listbox = inprogressframe = progress = status_label = mode_selector = separator_selector = quantize_var = vad_var = df_var = enh_selector = ov_var = tgate_var = fx_selector = fx_level_selector = None
 root = None
 status_text = "Ready"
 processing_mode = "balanced"  # normal, balanced, aggressive
-separator_choice = "demucs"   # demucs, spleeter, or audio_separator
+# Must match the first separator_selector option, which is what the UI shows
+# at startup -- see setFrames(), which calls set_separator() once.
+separator_choice = "demucs"   # fast_mdx | mrx | audio_separator | demucs | spleeter
 model_choice = "htdemucs"     # htdemucs | htdemucs_ft | mdx_extra | UVR-MDX-NET-Voc_FT.onnx | Kim_Vocal_2.onnx
+fast_overlap = 0.25           # fast_mdx window overlap: 0.25 = same output as MDX-Net, 0.1 = faster
+# Keep sound effects: "off" | "mrx" | "cdx23". Extracts an effects stem from
+# the original audio in parallel with de-musicing and mixes it back in.
+fx_choice = "off"
+fx_level_db = 0.0             # effects level relative to the original mix; set_fx() applies per-model defaults
+_last_post_gain = 1.0         # gain applied by advanced_postprocess_chunked's normalize
 quantize_enabled  = True      # INT8 dynamic quantization (htdemucs only, 2-3x faster on CPU)
 vad_enabled       = False     # Silero VAD gate — silence non-vocal gaps
 # Enhancer: "none" | "deepfilter" | "dpdfnet" | "gtcrn" | "speechdenoiser"
@@ -184,7 +203,9 @@ logging.getLogger("torch").setLevel(logging.ERROR)
 _log.info("=" * 60)
 _log.info("Music Assassin v0.4.4  —  session start")
 _log.info(f"Log file: {_LOG_PATH}")
-_log.info(f"DEMUCS available: {DEMUCS_AVAILABLE}  |  Spleeter: {SPLEETER_AVAILABLE}  |  MDX-Net: {AUDIO_SEPARATOR_AVAILABLE}")
+_log.info(f"DEMUCS available: {DEMUCS_AVAILABLE}  |  Spleeter: {SPLEETER_AVAILABLE}  |  MDX-Net: {AUDIO_SEPARATOR_AVAILABLE}"
+          f"  |  Fast engine: {FAST_ENGINE_AVAILABLE}"
+          f" ({'openvino' if importlib.util.find_spec('openvino') else 'onnxruntime'})")
 
 
 class PrintLogger:
@@ -255,14 +276,17 @@ def update_progress(value, total):
 # AUDIO DSP PIPELINE (Pre-Processing)
 # ============================================================================
 
-def audio_prefilter(waveform, sr=44100):
-    """Advanced pre-filtering: gate + high-pass + normalize"""
+def audio_prefilter(waveform, sr=44100, gate=True):
+    """Advanced pre-filtering: gate + high-pass + normalize.
+    gate=False skips the noise gate -- the effects path needs it off, since
+    a per-sample gate wipes out quiet ambience and room tone."""
     update_status("Pre-filtering audio...")
-    print("Pre-filtering: gate + high-pass + normalize")
+    print("Pre-filtering: " + ("gate + " if gate else "") + "high-pass + normalize")
 
     # Stage 1: Noise gate (< -40dB removed)
-    threshold = 10**(-40/20)  # -40dB
-    waveform = waveform * (np.abs(waveform) > threshold)
+    if gate:
+        threshold = 10**(-40/20)  # -40dB
+        waveform = waveform * (np.abs(waveform) > threshold)
 
     # Stage 2: High-pass filter (remove subsonic rumble < 40Hz)
     sos_hp = butter(4, 40/(sr/2), btype='highpass', output='sos')
@@ -329,9 +353,13 @@ def advanced_postprocess_chunked(vocals, sr=44100, mode='balanced', chunk_size=N
 
     # Global peak-normalize across the full output — avoids quiet tail chunks
     # being amplified to full scale (the cause of static at the end of files).
+    # The gain is kept so the effects stem can be mixed back at the same level.
+    global _last_post_gain
+    _last_post_gain = 1.0
     peak = np.max(np.abs(output))
     if peak > 1e-10:
-        output *= 0.98 / peak
+        _last_post_gain = 0.98 / peak
+        output *= _last_post_gain
 
     # Fade the last 0.5 s to silence — removes demucs tail noise/artifacts.
     fade_samps = min(int(sr * 0.5), len(output))
@@ -340,6 +368,40 @@ def advanced_postprocess_chunked(vocals, sr=44100, mode='balanced', chunk_size=N
 
     print(f"Post-processing complete")
     return output
+
+def mix_effects(vocals, effects, gain, sr=44100, ceiling=0.98, block=512):
+    """Add the effects stem to the processed dialogue, then limit peaks.
+
+    The limiter works on 512-sample blocks: each block's gain is the lowest
+    of its own and its neighbours' required gain, interpolated linearly
+    between block centres, so no sample exceeds the ceiling and a single loud
+    effect only ducks the ~30 ms around it instead of the whole file.
+    """
+    print(f"Mixing sound effects back in (gain {20 * np.log10(max(gain, 1e-10)):+.1f} dB)...")
+    update_status("Mixing sound effects back in...")
+    n = min(len(vocals), len(effects))
+    out = vocals[:n] + effects[:n].astype(np.float32) * np.float32(gain)
+
+    # Same tail fade as advanced_postprocess_chunked applied to the dialogue.
+    fade_samps = min(int(sr * 0.5), n)
+    if fade_samps > 0:
+        out[-fade_samps:] *= np.linspace(1.0, 0.0, fade_samps, dtype=np.float32)
+
+    nb = int(np.ceil(n / block))
+    padded = np.zeros(nb * block, np.float32)
+    padded[:n] = np.abs(out)
+    peaks = padded.reshape(nb, block).max(axis=1)
+    g = np.minimum(1.0, ceiling / np.maximum(peaks, 1e-10))
+    if g.min() < 1.0:
+        g = np.minimum(g, np.minimum(np.r_[g[1:], 1.0], np.r_[1.0, g[:-1]]))
+        centres = (np.arange(nb) + 0.5) * block
+        step = 1 << 20   # in slices: a whole-file index array costs 8 bytes/sample
+        for s in range(0, n, step):
+            e = min(s + step, n)
+            out[s:e] *= np.interp(np.arange(s, e), centres, g).astype(np.float32)
+        print(f"  Limiter: {np.mean(g < 1.0) * 100:.1f}% of blocks reduced, "
+              f"max {-20 * np.log10(g.min()):.1f} dB")
+    return out
 
 def _postprocess_chunk_normal(chunk, sr):
     """Normal mode: minimal processing"""
@@ -893,22 +955,39 @@ def separate_with_audio_separator(waveform, sr=44100, mdl="UVR-MDX-NET-Voc_FT.on
 # VAD GATE  (Silero VAD via torch hub)
 # ============================================================================
 
+_silero_lock = threading.Lock()
+
 def _get_silero_vad():
-    """Load Silero VAD from torch hub, caching result in module globals."""
+    """Load Silero VAD from torch hub, caching result in module globals.
+    Thread-safe: preload_silero_vad() may be loading it already."""
     global _silero_vad_model, _silero_get_ts
-    if _silero_vad_model is not None:
-        print("  Silero VAD: reused from cache")
+    with _silero_lock:
+        if _silero_vad_model is not None:
+            print("  Silero VAD: reused from cache")
+            return _silero_vad_model, _silero_get_ts
+        import torch
+        print("  Silero VAD: loading from torch hub (downloads ~1 MB on first use)...")
+        model, utils = torch.hub.load(
+            'snakers4/silero-vad', 'silero_vad',
+            force_reload=False, trust_repo=True
+        )
+        _silero_vad_model = model
+        _silero_get_ts    = utils[0]   # get_speech_timestamps
+        print("  Silero VAD: loaded and cached")
         return _silero_vad_model, _silero_get_ts
-    import torch
-    print("  Silero VAD: loading from torch hub (downloads ~1 MB on first use)...")
-    model, utils = torch.hub.load(
-        'snakers4/silero-vad', 'silero_vad',
-        force_reload=False, trust_repo=True
-    )
-    _silero_vad_model = model
-    _silero_get_ts    = utils[0]   # get_speech_timestamps
-    print("  Silero VAD: loaded and cached")
-    return _silero_vad_model, _silero_get_ts
+
+def preload_silero_vad():
+    """Start loading Silero in a background thread. The first load costs
+    9-20 s, almost all of it Python imports inside torch.hub; separation
+    runs in native code that releases the GIL, so the load hides behind it."""
+    if not VAD_AVAILABLE or _silero_vad_model is not None:
+        return
+    def _load():
+        try:
+            _get_silero_vad()
+        except Exception as e:
+            print(f"  Silero VAD preload failed ({e}) -- will retry when needed")
+    threading.Thread(target=_load, daemon=True).start()
 
 
 def apply_vad_gate(vocals, sr=44100):
@@ -1690,9 +1769,49 @@ def _process_single_track(file_path, input_, track_idx, output_path, video, audi
     del out
     gc.collect()
 
-    waveform = audio_prefilter(waveform, sample_rate)
+    if vad_enabled:
+        preload_silero_vad()
 
-    if separator_choice == 'audio_separator' and AUDIO_SEPARATOR_AVAILABLE:
+    t_track = time.perf_counter()
+    t_stage = t_track
+    def _lap(name):
+        nonlocal t_stage
+        now = time.perf_counter()
+        print(f"  [time] {name}: {now - t_stage:.1f}s")
+        t_stage = now
+
+    # Keep-sound-effects input: same high-pass and normalize as the separator
+    # gets, but without the per-sample gate, which would erase ambience.
+    fx_on = fx_choice != 'off' and FAST_ENGINE_AVAILABLE and fast_separation.dme_available(fx_choice)
+    if fx_choice != 'off' and not fx_on:
+        print(f"WARNING: keep sound effects ({fx_choice}) unavailable -- skipped")
+    fx_input = audio_prefilter(waveform, sample_rate, gate=False) if fx_on else None
+    effects = None
+
+    waveform = audio_prefilter(waveform, sample_rate)
+    _lap("prefilter")
+
+    def _sep_progress(i, n):
+        update_progress(i, n)
+
+    if separator_choice == 'fast_mdx' and FAST_ENGINE_AVAILABLE:
+        update_status("Separating vocals (Voc_FT, fast engine)...")
+        vocals = fast_separation.separate_vocals_mdx(waveform, sample_rate, overlap=fast_overlap,
+                                                     progress=_sep_progress)
+    elif separator_choice == 'mrx' and FAST_ENGINE_AVAILABLE:
+        update_status("Separating dialogue (MRX)...")
+        if fx_on and fx_choice == 'mrx':
+            # One MRX pass gives both stems. It runs on the un-gated input
+            # so the effects keep their ambience.
+            stems = fast_separation.separate_dme(fx_input, "mrx", sample_rate,
+                                                 want=("dialogue", "effects"),
+                                                 progress=_sep_progress)
+            vocals, effects = stems["dialogue"], stems["effects"]
+            del stems
+        else:
+            vocals = fast_separation.separate_dme(waveform, "mrx", sample_rate, want=("dialogue",),
+                                                  progress=_sep_progress)["dialogue"]
+    elif separator_choice == 'audio_separator' and AUDIO_SEPARATOR_AVAILABLE:
         vocals = separate_with_audio_separator(waveform, sample_rate, model_choice)
     elif separator_choice == 'demucs' and DEMUCS_AVAILABLE:
         vocals = separate_with_demucs(waveform, sample_rate)
@@ -1719,14 +1838,27 @@ def _process_single_track(file_path, input_, track_idx, output_path, video, audi
     # ascontiguousarray skips the copy when the array is already contiguous
     vocals = np.ascontiguousarray(vocals, dtype=np.float32)
     gc.collect()
+    _lap(f"separation ({separator_choice})")
+
+    # Effects stem from the original audio. Runs after separation rather
+    # than in a thread: both stages already use every physical core.
+    if fx_on and effects is None:
+        update_status(f"Extracting sound effects ({fx_choice.upper()})...")
+        effects = fast_separation.separate_dme(fx_input, fx_choice, sample_rate, want=("effects",),
+                                               progress=_sep_progress)["effects"]
+    if fx_on:
+        del fx_input
+        _lap(f"effects ({fx_choice})")
 
     vocals = advanced_postprocess_chunked(vocals, sample_rate, processing_mode)
     gc.collect()
+    _lap(f"post-process ({processing_mode})")
 
     # Optional enhancer — deepfilter | dpdfnet | gtcrn | speechdenoiser
     if enhancer_choice != 'none':
         vocals = apply_enhancer(vocals, sample_rate)
         gc.collect()
+        _lap(f"enhancer ({enhancer_choice})")
 
     # VAD gate runs LAST, after the enhancer. DeepFilterNet needs a continuous
     # signal to build a stable noise model — running VAD first fragments the
@@ -1736,6 +1868,16 @@ def _process_single_track(file_path, input_, track_idx, output_path, video, audi
     if vad_enabled:
         vocals = apply_vad_gate(vocals, sample_rate)
         gc.collect()
+        _lap("VAD gate")
+
+    # Effects go back in after the VAD gate, so sounds between lines of
+    # dialogue survive it. Scaled by the post-process gain, they sit at the
+    # same level relative to the dialogue as in the original mix.
+    if effects is not None:
+        vocals = mix_effects(vocals, effects, _last_post_gain * 10 ** (fx_level_db / 20), sample_rate)
+        del effects
+        gc.collect()
+        _lap("effects mix")
 
     print(f"  Exporting: {os.path.basename(output_path)}")
     update_status(f"Exporting: {os.path.basename(output_path)}")
@@ -1780,6 +1922,13 @@ def _process_single_track(file_path, input_, track_idx, output_path, video, audi
     process2.stdin.close()
     process2.wait()
     process2.kill()
+    _lap("export")
+    total = time.perf_counter() - t_track
+    if duration > 0:
+        print(f"  [time] total: {total:.1f}s for {duration / 60:.1f} min of audio "
+              f"({total / duration * 600:.0f}s per 10 min)")
+    else:
+        print(f"  [time] total: {total:.1f}s")
     print(f"  SUCCESS: {output_path}")
     return True
 
@@ -1839,7 +1988,7 @@ def demusic_pro(file_path):
 
 def setFrames(root):
     """Compact formal dark GUI"""
-    global b1, b2, inprogressframe, listbox, f1, a1, progress, status_label, mode_selector, separator_selector, quantize_var, vad_var, df_var, enh_selector, ov_var, tgate_var
+    global b1, b2, inprogressframe, listbox, f1, a1, progress, status_label, mode_selector, separator_selector, quantize_var, vad_var, df_var, enh_selector, ov_var, tgate_var, fx_selector, fx_level_selector
 
     BG      = '#0d0d14'
     CARD    = '#14141f'
@@ -1907,6 +2056,10 @@ def setFrames(root):
     Label(sep_card, text="SEPARATOR / MODEL", font=("Segoe UI", 7, "bold"),
           bg=CARD, fg=MUTED).pack(anchor="w", padx=10, pady=(7, 2))
     sep_options = []
+    if FAST_ENGINE_AVAILABLE:
+        sep_options.append(FAST_SEP_BEST)
+        sep_options.append(FAST_SEP_QUICK)
+        sep_options.append(FAST_SEP_MRX)
     if AUDIO_SEPARATOR_AVAILABLE:
         sep_options.append("MDX-Net Voc_FT   (Vocals · Fast · 66 MB)")
         sep_options.append("MDX-Net Kim_v2   (Vocals · Best CPU · 130 MB)")
@@ -1949,6 +2102,33 @@ def setFrames(root):
     enh_card.pack(fill="x", padx=16, pady=(6, 0))
     Label(enh_card, text="ENHANCEMENT", font=("Segoe UI", 7, "bold"),
           bg=CARD, fg=MUTED).pack(anchor="w", padx=10, pady=(7, 4))
+
+    # Row 0 — Keep sound effects
+    fx_row = Frame(enh_card, bg=CARD)
+    fx_row.pack(fill="x", padx=10, pady=(0, 4))
+    Label(fx_row, text="Keep sound effects:", bg=CARD, fg=TEXT,
+          font=("Segoe UI", 8)).pack(side="left", padx=(0, 4))
+    fx_options = [FX_OFF]
+    if FAST_ENGINE_AVAILABLE:
+        fx_options.append(FX_MRX)
+        if fast_separation.dme_available("cdx23"):
+            fx_options.append(FX_CDX23)
+    fx_selector = Combobox(fx_row, values=fx_options, width=30,
+                           state="readonly" if len(fx_options) > 1 else "disabled",
+                           font=("Segoe UI", 8), style='App.TCombobox')
+    fx_selector.set(FX_OFF)
+    fx_selector.pack(side="left")
+    fx_selector.bind("<<ComboboxSelected>>", lambda e: set_fx())
+    Label(fx_row, text="Level:", bg=CARD, fg=TEXT,
+          font=("Segoe UI", 8)).pack(side="left", padx=(10, 4))
+    fx_level_selector = Combobox(fx_row, values=list(FX_LEVELS), width=16,
+                                 state="disabled", font=("Segoe UI", 8),
+                                 style='App.TCombobox')
+    fx_level_selector.set("Normal")
+    fx_level_selector.pack(side="left")
+    fx_level_selector.bind("<<ComboboxSelected>>", lambda e: set_fx_level())
+    Label(fx_row, text="footsteps, doors, ambience",
+          bg=CARD, fg=MUTED, font=("Segoe UI", 7)).pack(side="left", padx=(8, 0))
 
     # Row 1 — VAD toggle + enhancer selector
     enh_row = Frame(enh_card, bg=CARD)
@@ -2078,11 +2258,40 @@ def setFrames(root):
 
     sys.stdout = PrintLogger(log_widget)
 
+    # The globals' defaults don't know which separators are installed; make
+    # them match the option the selector is actually showing.
+    if sep_options:
+        set_separator()
+
+FAST_SEP_BEST  = "Voc_FT \u00b7 fast engine   (Best)"
+FAST_SEP_QUICK = "Voc_FT \u00b7 fast engine, low overlap   (Faster)"
+FAST_SEP_MRX   = "MRX dialogue   (Fastest \u00b7 lower quality)"
+FX_OFF   = "Off"
+FX_MRX   = "Fast  (MRX, some music bleed)"
+FX_CDX23 = "Quality  (CDX23, cleaner, slower)"
+# Effects level relative to the original mix. Raising it raises any music
+# that leaked into the effects by the same amount. Picking an effects
+# model resets the level to that model's default: +3 dB for MRX, to make up
+# for what its music cleanup takes off the effects; CDX23 gets no cleanup.
+FX_LEVELS = {"Quieter  (-6 dB)": -6.0, "Normal": 0.0,
+             "Louder  (+3 dB)": 3.0, "Much louder  (+6 dB)": 6.0}
+FX_LEVEL_DEFAULT = {"mrx": "Louder  (+3 dB)", "cdx23": "Normal"}
+
 def set_separator():
     """Update separator engine + model choice"""
-    global separator_choice, model_choice
+    global separator_choice, model_choice, fast_overlap
     sep = separator_selector.get()
-    if "MDX-Net" in sep:
+    if sep in (FAST_SEP_BEST, FAST_SEP_QUICK):
+        separator_choice = "fast_mdx"
+        model_choice = "UVR-MDX-NET-Voc_FT.onnx"
+        fast_overlap = 0.25 if sep == FAST_SEP_BEST else 0.1
+        update_status(f"Voc_FT fast engine (overlap {fast_overlap})")
+        print(f"Separator: Voc_FT fast engine  |  overlap: {fast_overlap}")
+    elif sep == FAST_SEP_MRX:
+        separator_choice = "mrx"
+        update_status("MRX dialogue separation")
+        print("Separator: MRX (dialogue / music / effects)")
+    elif "MDX-Net" in sep:
         separator_choice = "audio_separator"
         model_choice = "UVR-MDX-NET-Voc_FT.onnx" if "Voc_FT" in sep else "Kim_Vocal_2.onnx"
         update_status(f"MDX-Net: {model_choice}")
@@ -2096,6 +2305,25 @@ def set_separator():
         separator_choice = "spleeter"
         update_status("Separator: SPLEETER")
         print("Separator: SPLEETER")
+
+def set_fx():
+    """Keep sound effects: off | mrx | cdx23"""
+    global fx_choice
+    sel = fx_selector.get()
+    fx_choice = {FX_MRX: "mrx", FX_CDX23: "cdx23"}.get(sel, "off")
+    fx_level_selector.configure(state="disabled" if fx_choice == "off" else "readonly")
+    if fx_choice != "off":
+        fx_level_selector.set(FX_LEVEL_DEFAULT[fx_choice])
+        set_fx_level()
+    print(f"Keep sound effects: {fx_choice}")
+    update_status(f"Keep sound effects: {sel}")
+
+def set_fx_level():
+    global fx_level_db
+    sel = fx_level_selector.get()
+    fx_level_db = FX_LEVELS.get(sel, 0.0)
+    print(f"Effects level: {fx_level_db:+.0f} dB")
+    update_status(f"Effects level: {sel}")
 
 def set_quantize():
     """Toggle INT8 quantization — clears cache so the model reloads accordingly"""
@@ -2293,6 +2521,7 @@ if __name__ == "__main__":
     print("=" * 55)
     print("Music Assassin Pro v0.4.4 - MDX-Net/DEMUCS/SPLEETER")
     print("=" * 55)
+    print(f"Fast engine:         {FAST_ENGINE_AVAILABLE}  (OpenVINO: {importlib.util.find_spec('openvino') is not None})")
     print(f"MDX-Net available:   {AUDIO_SEPARATOR_AVAILABLE}")
     print(f"DEMUCS available:    {DEMUCS_AVAILABLE}")
     print(f"Spleeter available:  {SPLEETER_AVAILABLE}")

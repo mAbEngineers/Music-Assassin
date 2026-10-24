@@ -16,6 +16,7 @@ tensorflow>=2.16.0          # required by spleeter (tf 2.12.1 not available for 
 # ── ONNX inference ────────────────────────────────────────────────────────────
 onnxruntime>=1.17.0         # MDX-Net + SpeechDenoiser ONNX
 # onnxruntime-openvino      # optional: AVX2/AVX-512 acceleration (uncomment if needed)
+openvino>=2024.0            # fast engine (fast_separation.py): BF16/FP32 Voc_FT, MRX
 sherpa-onnx>=1.13.0         # DPDFNet + GTCRN speech enhancement
 
 # ── Speech enhancement ────────────────────────────────────────────────────────
@@ -28,6 +29,7 @@ scipy>=1.5.0                # SciPy filters used in DSP pipeline
 soundfile>=0.12.0           # WAV read/write
 ffmpeg-python>=0.2.0        # video/audio probing and extraction
 librosa>=0.8.0              # audio utilities
+pyloudnorm>=0.1.0           # MRX input loudness (fast_separation.py; RMS fallback without it)
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
 psutil>=5.9.0               # RAM monitoring in test suite
