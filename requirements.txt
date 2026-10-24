@@ -1,4 +1,4 @@
-# Music Assassin v0.4.4 Requirements
+# Music Assassin v0.4.5 Requirements
 # Python 3.12 (tested on assassin_venv_v0.4.2)
 # Install: pip install -r requirements.txt
 # See setup_v044.sh for model file downloads

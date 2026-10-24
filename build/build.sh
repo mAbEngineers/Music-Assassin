@@ -50,7 +50,8 @@ if [ $# -eq 0 ]; then
     echo "  ./build.sh 0.4.0   - DEMUCS only (chunked, early prototype)"
     echo "  ./build.sh 0.4.1   - DEMUCS + Spleeter (chunked, INT8, full DSP)"
     echo "  ./build.sh 0.4.2   - DEMUCS + Spleeter + MDX-Net (vocals-only MDX-Net)"
-    echo "  ./build.sh 0.4.4   - + VAD gate + DeepFilterNet cleanup (Recommended)"
+    echo "  ./build.sh 0.4.4   - + VAD gate + DeepFilterNet cleanup"
+    echo "  ./build.sh 0.4.5   - + fast engine (Voc_FT/OpenVINO) + keep sound effects (Recommended)"
     echo "  ./build.sh 0.5.0   - CPU Streaming Edition"
     echo ""
     echo "Examples:"
@@ -65,16 +66,20 @@ VERSION="${1#v}"
 
 EXECUTABLE_FILE="versions/MusicAssassinGUI_v${VERSION}.py"
 SPEC_FILE="build/MusicAssassin_v${VERSION}.spec"
-BUILD_DIR="build/output_v${VERSION}"
+# BUILD_OUT lets you write the build off a slow or sftp/FUSE-mounted working
+# tree onto local disk. PyInstaller's archive writer fails with
+# "OSError: [Errno 95] Operation not supported" when packaging onto such a
+# mount, so set e.g. BUILD_OUT=$HOME/ma_build when the repo is mounted.
+BUILD_DIR="${BUILD_OUT:-build}/output_v${VERSION}"
 
 # Verify input is valid
 case $VERSION in
-    0.0.1|0.0.2|0.1.0|0.2.0|0.3.3|0.3.4|0.4.0|0.4.1|0.4.2|0.4.4|0.5.0)
+    0.0.1|0.0.2|0.1.0|0.2.0|0.3.3|0.3.4|0.4.0|0.4.1|0.4.2|0.4.4|0.4.5|0.5.0)
         # Valid version
         ;;
     *)
         echo -e "${RED}ERROR: Invalid version '${VERSION}'${NC}"
-        echo "Valid versions: 0.0.1, 0.0.2, 0.1.0, 0.2.0, 0.3.3, 0.3.4, 0.4.0, 0.4.1, 0.4.2, 0.4.4, 0.5.0"
+        echo "Valid versions: 0.0.1, 0.0.2, 0.1.0, 0.2.0, 0.3.3, 0.3.4, 0.4.0, 0.4.1, 0.4.2, 0.4.4, 0.4.5, 0.5.0"
         exit 1
         ;;
 esac
@@ -220,10 +225,20 @@ if [ -f "$executable_path" ]; then
             echo ""
             ;;
         0.4.4)
-            echo "Version 0.4.4: DEMUCS + MDX-Net + VAD + DeepFilterNet (Recommended)"
+            echo "Version 0.4.4: DEMUCS + MDX-Net + VAD + DeepFilterNet"
             echo "Uses: Demucs/MDX-Net separation + Silero VAD silence gate + optional DeepFilterNet cleanup"
             echo "Fix: global (not per-chunk) normalization, last-chunk fade-to-zero padding"
             echo "Note: Spleeter/TensorFlow excluded from this build (PyInstaller+keras crash);"
+            echo "      run from source with setup_v044.sh if you need the Spleeter engine."
+            echo "Install deps: bash setup_v044.sh [venv_path]"
+            echo ""
+            ;;
+        0.4.5)
+            echo "Version 0.4.5: fast engine + keep sound effects (Recommended)"
+            echo "Uses: Voc_FT on OpenVINO (fast engine, the default) + MRX/CDX23 keep-effects;"
+            echo "      Demucs/MDX-Net still selectable, Silero VAD gate, optional DeepFilterNet."
+            echo "New:  ~4x faster separation (about 58 s per 10 min), effects level control, crash logging."
+            echo "Note: bundles OpenVINO + 3 models (~890 MB). Spleeter/TensorFlow excluded;"
             echo "      run from source with setup_v044.sh if you need the Spleeter engine."
             echo "Install deps: bash setup_v044.sh [venv_path]"
             echo ""
