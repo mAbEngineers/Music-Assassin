@@ -4,10 +4,15 @@
 
 **Strip background music out of long audio and video — keep the dialogue, keep the SFX.**
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/mAbEngineers/Music-Assassin?include_prereleases&sort=semver&label=release&color=orange)](https://github.com/mAbEngineers/Music-Assassin/releases)
+[![Downloads](https://img.shields.io/github/downloads/mAbEngineers/Music-Assassin/total?label=downloads&color=red)](https://github.com/mAbEngineers/Music-Assassin/releases)
+[![License: MIT](https://img.shields.io/github/license/mAbEngineers/Music-Assassin?label=license&color=green)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-informational)
+
 ![Offline](https://img.shields.io/badge/runs-100%25%20offline%2C%20CPU--only-success)
 ![Python](https://img.shields.io/badge/python-3.9%E2%80%933.12-blue)
+
+**[Releases](https://github.com/mAbEngineers/Music-Assassin/releases) · [Changelog](CHANGELOG.md) · [Documentation](docs/) · [Issues](https://github.com/mAbEngineers/Music-Assassin/issues) · [Live App](https://github.com/mAbEngineers/music-assassin-live)**
 
 </div>
 
@@ -15,6 +20,12 @@ Point it at an anime episode, a movie, or any audio/video file with background
 music over the dialogue, and it removes the music — using open-source AI
 separation models, entirely offline. No cloud services, no paid APIs, no GPU
 required.
+
+> **Sibling repo:** [`music-assassin-live`](https://github.com/mAbEngineers/music-assassin-live)
+> is the shippable, real-time Linux app — a "volume booster" that strips
+> music from whatever the device is playing, no manual routing. It's built
+> on whichever separator wins here; this repo is the research lab where
+> separation models get tested and benchmarked before being promoted there.
 
 ---
 
