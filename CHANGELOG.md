@@ -37,14 +37,14 @@ source-separation models, and is the actively developed line today.
 - **v0.4.1**: + Spleeter added back as a second selectable engine alongside Demucs. FIX both engines now pre-chunk long files (60s + 2s overlap) before feeding the model — previously, long files could crash with out-of-memory errors. + Session model cache (weights load once, not per file). + INT8 quantization for Demucs (~2–3× faster on CPU). FIX static noise at the end of files (normalization was happening per-chunk instead of once across the whole output). + Fade-out on the last half-second to remove Demucs tail artifacts.
 - **v0.4.2**: + MDX-Net added as a third engine, via `audio-separator` (UVR-MDX-NET-Voc_FT and Kim_Vocal_2 models) — a vocals-only specialist, smaller (66–130 MB) and cleaner than the general-purpose 4-stem models. Requires Python 3.9+.
 - **v0.4.2-RT** *(research/testing branch, not a numbered release for daily use)*: A side branch for evaluating next-generation models before they're promoted into the main line. + MDX23C models (higher SDR than Voc_FT, but require torch and run slower on CPU). + Demucs extras: 6-stem separation (adds piano/guitar), Hybrid Demucs v3, quantized variants. + Optional test-time augmentation (runs the model twice and averages — small quality boost, 2× runtime cost). + Infrastructure stubs for HS-TasNet and RT-STT, two real-time architectures with no public trained weights yet — ready to activate the moment weights become available. + Experimental HPSS pre-filter and SpeechBrain MetricGAN+ post-filter, mirroring a DSP→AI→DSP pipeline design.
-- **v0.4.4**: Builds on v0.4.2's three-engine pipeline and adds two new cleanup stages. + **VAD gate** (Silero VAD) — silences the gaps between spoken/sung lines where leftover music was bleeding through. + Optional **DeepFilterNet** pass — a learned speech-cleanup model that removes residual noise/artifacts left after separation. FIX global (not per-chunk) normalization, removing end-of-file static for good. FIX last-chunk fade-to-zero padding, removing a boundary artifact at chunk edges. **This is the version published as the current GitHub release.**
-- **v0.4.5** *(current development line, branch `feat/fast-engine-keep-effects`, 2026-10)*: Not yet released as prebuilt binaries.
+- **v0.4.4**: Builds on v0.4.2's three-engine pipeline and adds two new cleanup stages. + **VAD gate** (Silero VAD) — silences the gaps between spoken/sung lines where leftover music was bleeding through. + Optional **DeepFilterNet** pass — a learned speech-cleanup model that removes residual noise/artifacts left after separation. FIX global (not per-chunk) normalization, removing end-of-file static for good. FIX last-chunk fade-to-zero padding, removing a boundary artifact at chunk edges.
+- **v0.4.5** *(2026-10, current release)*:
   - + **Fast separation engine** (`fast_separation.py`): Voc_FT on OpenVINO, BF16 where the CPU supports it, with onnxruntime as fallback. A 10-min episode takes about 58 s end to end on a 16-core CPU, down from about 225 s for separation alone. It is the new default.
   - + **Keep sound effects** (Off / Fast MRX / Quality CDX23), with an effects level control. Effects are separated in parallel and added back after the VAD gate.
   - + "MRX dialogue" fastest separator option.
   - FIX the window showed MDX-Net while the app actually ran DEMUCS at startup.
   - FIX the one-time Silero VAD load (9–22 s) now happens in the background.
-  - Packaged builds (verified locally, not yet published) bundle the three models and OpenVINO, giving a build of about 890 MB.
+  - Packaged builds bundle the fast-engine models (Voc_FT, MRX, CDX23) and OpenVINO. **This is the version published as the current GitHub release.**
 
 ## Era 8 — CPU-Optimized Streaming Rewrite, parked experiment (v0.5.0 – v0.5.1)
 A separate architectural branch, not a continuation of v0.4.x — see the
@@ -60,8 +60,8 @@ down for a future always-on/real-time use case.
 
 | Feature | Introduced |
 |---|---|
-| Fast separation engine (OpenVINO, ~58 s per 10 min end to end) | v0.4.5 (branch) |
-| Keep sound effects (MRX / CDX23) with level control | v0.4.5 (branch) |
+| Fast separation engine (OpenVINO, ~58 s per 10 min end to end) | v0.4.5 |
+| Keep sound effects (MRX / CDX23) with level control | v0.4.5 |
 | VAD silence gate (Silero) | v0.4.4 |
 | DeepFilterNet post-separation cleanup (optional) | v0.4.4 |
 | MDX-Net vocals-only separation (UVR) | v0.4.2+ |
@@ -86,7 +86,7 @@ down for a future always-on/real-time use case.
 
 | Version | Python | Key deps |
 |---|---|---|
-| v0.4.5 (branch) | 3.9–3.12 (3.12 tested) | openvino, onnxruntime, pyloudnorm, demucs, audio-separator, spleeter, torch, tensorflow, sherpa-onnx, deepfilternet |
+| v0.4.5 | 3.9–3.12 (3.12 tested) | openvino, onnxruntime, pyloudnorm, demucs, audio-separator, spleeter, torch, tensorflow, sherpa-onnx, deepfilternet |
 | v0.4.4 | 3.9–3.12 (3.12 tested) | demucs, audio-separator, spleeter, torch, tensorflow, sherpa-onnx, deepfilternet (no fast engine) |
 | v0.4.2-RT | 3.9–3.11 | as v0.4.2, plus speechbrain (optional, ~300 MB) |
 | v0.4.2 | 3.9–3.11 | audio-separator, onnxruntime, demucs, torch, spleeter==2.4.2, tensorflow==2.12 |

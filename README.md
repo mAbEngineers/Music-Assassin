@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🎵 Music Assassin
+# Music Assassin
 
 **Strip background music out of long audio and video — keep the dialogue, keep the SFX.**
 
@@ -16,10 +16,10 @@
 
 </div>
 
-Point it at an anime episode, a movie, or any audio/video file with background
-music over the dialogue, and it removes the music — using open-source AI
-separation models, entirely offline. No cloud services, no paid APIs, no GPU
-required.
+Point it at a TV episode, a movie, a podcast, or any audio/video file with
+background music over the dialogue, and it removes the music — using
+open-source AI separation models, entirely offline. No cloud services, no
+paid APIs, no GPU required.
 
 > **Sibling repo:** [`music-assassin-live`](https://github.com/mAbEngineers/music-assassin-live)
 > is the shippable, real-time Linux app — a "volume booster" that strips
@@ -29,18 +29,18 @@ required.
 
 ---
 
-## ✨ Highlights
+## Highlights
 
-- ⚡ **Fast** — the OpenVINO-accelerated engine processes a 10-minute episode in about **58 seconds** on a 16-core CPU (down from ~225 s through the older pipeline).
-- 🎚️ **Keep the sound effects** — an optional pass extracts footsteps, impacts, and ambience separately and mixes them back in after the music is gone.
-- 🧠 **A real model library, not one model** — Demucs, MDX-Net/UVR, Spleeter, and two dialogue/music/effects separators (MRX, CDX23) are all selectable, with VAD gating and a learned cleanup pass on top. See the [full lineup](#-model-library) below.
-- 📦 **Fully offline, CPU-only** — every model runs locally once downloaded; nothing leaves your machine.
-- 🎬 **Video-aware** — subtitles are kept, and the video stream passes through untouched instead of being re-encoded.
-- 📂 **Batch + YouTube** — queue a folder of files, or just paste a YouTube URL.
+- **Fast** — the OpenVINO-accelerated engine processes a 10-minute episode in about **58 seconds** on a 16-core CPU (down from ~225 s through the older pipeline).
+- **Keep the sound effects** — an optional pass extracts footsteps, impacts, and ambience separately and mixes them back in after the music is gone.
+- **A real model library, not one model** — Demucs, MDX-Net/UVR, Spleeter, and two dialogue/music/effects separators (MRX, CDX23) are all selectable, with VAD gating and a learned cleanup pass on top. See the [full lineup](#model-library) below.
+- **Fully offline, CPU-only** — every model runs locally once downloaded; nothing leaves your machine.
+- **Video-aware** — subtitles are kept, and the video stream passes through untouched instead of being re-encoded.
+- **Batch + YouTube** — queue a folder of files, or just paste a YouTube URL.
 
 ---
 
-## 🧩 Model library
+## Model library
 
 Music Assassin isn't built on one separator — it ships a selectable library of
 them, so you can trade speed for quality (or vice versa) per file.
@@ -52,7 +52,7 @@ them, so you can trade speed for quality (or vice versa) per file.
 | **CDX23** | Quality effects separator | ~80 MB | Best sound-effects retention of anything tested; used for "Keep effects: Quality" |
 | **MDX-Net Voc_FT / Kim_Vocal_2** | Vocals-only specialists | 66–130 MB | Via `audio-separator`; the pre-fast-engine default |
 | **DEMUCS** htdemucs / htdemucs_ft / mdx_extra | General 4-stem separation | 80 MB–320 MB | Meta Research; natural-sounding, INT8-quantized option |
-| **Spleeter** | Legacy 4-stem fallback | ~150 MB | Fastest to load, lowest quality on anime-style vocals |
+| **Spleeter** | Legacy 4-stem fallback | ~150 MB | Fastest to load, lowest separation quality of the engines here |
 | **Silero VAD** | Silence gate | ~1 MB | Silences gaps between lines where leftover music bleeds through |
 | **DeepFilterNet** (optional) | Post-separation cleanup | small | Learned speech enhancer for residual noise/artifacts |
 
@@ -70,62 +70,60 @@ for the full table.
 
 ---
 
-## 🔀 Pipeline
+## Pipeline
 
 How a file actually moves through the app today (default settings; optional
 stages are dashed). Verified against the current processing code, not just
 the docstrings.
 
 ```mermaid
-flowchart TD
-    IN([Input audio / video]) --> EXTRACT[Extract audio track<br/>ffmpeg, mono]
-    EXTRACT --> PRE[Pre-filter<br/>noise gate + high-pass]
-    PRE --> SEP[Separate vocals<br/>Voc_FT fast engine · OpenVINO — default<br/>or MDX-Net / Demucs / Spleeter]
-    SEP --> POST[Post-filter<br/>harmonic rejection + notch filters]
-    POST --> ENH{{DeepFilterNet cleanup<br/>optional}}
-    ENH --> VAD{{VAD gate · Silero<br/>optional, runs last}}
-    SEP -.->|keep sound effects on| FX[Separate effects stem<br/>MRX or CDX23, in parallel]
-    VAD --> MIX[Mix effects back in]
-    FX -.-> MIX
-    MIX --> OUT([Export<br/>video + subtitles preserved])
-
-    classDef optional stroke-dasharray: 4 3
-    class ENH,VAD optional
+flowchart LR
+    IN([Input audio / video]) --> EXTRACT[Extract<br/>ffmpeg, mono] --> PRE[Pre-filter<br/>noise gate + high-pass] --> SEP[Separate vocals<br/>Voc_FT fast engine, default<br/>or MDX-Net / Demucs / Spleeter]
 ```
 
-The VAD gate deliberately runs *after* the cleanup pass, not before —
-DeepFilterNet needs a continuous signal to build its noise model, and gating
-first would fragment the audio. This pipeline has grown in stages since
-v0.0.1 (raw Spleeter, no filtering at all); see
-[`docs/PIPELINE_EVOLUTION.md`](docs/PIPELINE_EVOLUTION.md) for a diagram of
-every version where the shape of it changed.
+```mermaid
+flowchart LR
+    POST[Post-filter<br/>harmonic rejection + notch] --> ENH{{DeepFilterNet<br/>optional}} --> VAD{{VAD gate, Silero<br/>optional, runs last}} --> MIX{{Mix effects back in<br/>optional}} --> OUT([Export<br/>video + subtitles preserved])
+
+    classDef optional stroke-dasharray: 4 3
+    class ENH,VAD,MIX optional
+```
+
+The second row picks up where the first leaves off: Separate feeds straight
+into Post-filter. The VAD gate deliberately runs *after* the cleanup pass,
+not before — DeepFilterNet needs a continuous signal to build its noise
+model, and gating first would fragment the audio. Mix only runs when "keep
+sound effects" is on, fed by a parallel MRX/CDX23 extraction not shown here
+for space.
+
+This pipeline has grown in stages since v0.0.1 (raw Spleeter, no filtering
+at all); see [`docs/PIPELINE_EVOLUTION.md`](docs/PIPELINE_EVOLUTION.md) for
+a diagram of every version where the shape of it changed.
 
 ---
 
-## 📥 Download
+## Download
 
 Prebuilt, ready to run — no Python install needed.
 
 | Platform | File | Size |
 |---|---|---|
-| **Windows** 10/11 (x64) | [`MusicAssassin_v0.4.4.exe`](https://github.com/mAbEngineers/Music-Assassin/releases/download/v0.4.4/MusicAssassin_v0.4.4.exe) | ~394 MB |
-| **Ubuntu / Debian** (x64) | [`MusicAssassin_v0.4.4.deb`](https://github.com/mAbEngineers/Music-Assassin/releases/download/v0.4.4/MusicAssassin_v0.4.4.deb) | ~610 MB |
-| **Linux** (x64, portable) | [`MusicAssassin_v0.4.4`](https://github.com/mAbEngineers/Music-Assassin/releases/download/v0.4.4/MusicAssassin_v0.4.4) | ~610 MB |
+| **Windows** 10/11 (x64) | [`MusicAssassin_v0.4.5.exe`](https://github.com/mAbEngineers/Music-Assassin/releases/download/v0.4.5/MusicAssassin_v0.4.5.exe) | ~589 MB |
+| **Ubuntu / Debian** (x64) | [`MusicAssassin_v0.4.5.deb`](https://github.com/mAbEngineers/Music-Assassin/releases/download/v0.4.5/MusicAssassin_v0.4.5.deb) | ~1.1 GB |
+| **Linux** (x64, portable) | [`MusicAssassin_v0.4.5`](https://github.com/mAbEngineers/Music-Assassin/releases/download/v0.4.5/MusicAssassin_v0.4.5) | ~1.1 GB |
 
 - **Windows** — run the `.exe` directly, no install.
-- **Debian/Ubuntu** — `sudo dpkg -i MusicAssassin_v0.4.4.deb`, then run `music-assassin`.
-- **Linux portable** — `chmod +x MusicAssassin_v0.4.4 && ./MusicAssassin_v0.4.4`.
+- **Debian/Ubuntu** — `sudo dpkg -i MusicAssassin_v0.4.5.deb`, then run `music-assassin`.
+- **Linux portable** — `chmod +x MusicAssassin_v0.4.5 && ./MusicAssassin_v0.4.5`.
 
-Demucs (`htdemucs`) and Silero VAD are bundled; other models download once on
-first use. [All releases →](https://github.com/mAbEngineers/Music-Assassin/releases)
-
-> 🚧 **v0.4.5 — the fast engine + keep-sound-effects build — is being
-> packaged now** and isn't on the releases page yet. Want it today? Run from
-> source (below) on the `feat/fast-engine-keep-effects` branch.
+The fast engine (Voc_FT), MRX, and CDX23 are bundled — about 151 MB — so
+separation and sound-effect keeping both work offline from the first run.
+Demucs, Spleeter, and the alternate MDX-Net models download once on first
+use. [All releases](https://github.com/mAbEngineers/Music-Assassin/releases)
 
 ---
 
-## 🚀 Run from source
+## Run from source
 
 ```bash
 git clone https://github.com/mAbEngineers/Music-Assassin.git
@@ -137,7 +135,7 @@ source $HOME/.venvs/music-assassin/bin/activate
 
 bash setup_v044.sh $HOME/.venvs/music-assassin   # installs deps + downloads models
 
-python MusicAssassinGUI_v0.4.5.py                # current development build
+python MusicAssassinGUI_v0.4.5.py
 ```
 
 DeepFilterNet needs a Rust toolchain: `curl https://sh.rustup.rs | sh -s -- -y`
@@ -156,7 +154,7 @@ stages? See the full per-version install matrix in
 
 ---
 
-## ⚙️ Requirements
+## Requirements
 
 - **Python 3.9–3.12** (3.12 tested) to run from source.
 - **FFmpeg** — system package, not pip (`apt install ffmpeg` / `brew install ffmpeg`).
@@ -168,7 +166,7 @@ Exact per-version Python/dependency matrix: [`CHANGELOG.md`](CHANGELOG.md) and
 
 ---
 
-## 📚 Research & roadmap
+## Research & roadmap
 
 This repo is also the research lab behind the model choices above:
 
@@ -180,7 +178,7 @@ This repo is also the research lab behind the model choices above:
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Feedback and PRs welcome. On the near-term list:
 - GPU acceleration toggle
@@ -190,15 +188,19 @@ Feedback and PRs welcome. On the near-term list:
 
 ---
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
-**Demucs** (Meta Research) · **Spleeter** (Deezer Research) ·
-**audio-separator / UVR** (NomadKaraoke / Anjok07) ·
-**DeepFilterNet** (Rikorose) · **Silero VAD** (Silero Team) ·
-**sherpa-onnx** (k2-fsa) · **OpenVINO** (Intel) ·
-**MRX** (Mitsubishi Electric Research Labs) ·
-**CDX23** (ZFTurbo / Sound Demixing Challenge 2023) ·
-**FFmpeg** · **SciPy**
+- **Demucs** — Meta Research
+- **Spleeter** — Deezer Research
+- **audio-separator / UVR** — NomadKaraoke / Anjok07
+- **DeepFilterNet** — Rikorose
+- **Silero VAD** — Silero Team
+- **sherpa-onnx** — k2-fsa
+- **OpenVINO** — Intel
+- **MRX** — Mitsubishi Electric Research Labs
+- **CDX23** — ZFTurbo / Sound Demixing Challenge 2023
+- **FFmpeg**
+- **SciPy**
 
 ---
 

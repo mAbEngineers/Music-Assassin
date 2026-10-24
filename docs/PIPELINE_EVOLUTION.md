@@ -103,7 +103,7 @@ its own function. Spleeter switches from 2-stem to 4-stem. v0.3.4 adds
 nothing to the pipeline itself — it's a new *input* path (paste a URL
 instead of browsing for a file) feeding the identical v0.3.3 pipeline.
 
-> ⚠️ **Docstring/code mismatch, v0.3.3 and v0.3.4.** The module docstring
+> **Docstring/code mismatch, v0.3.3 and v0.3.4.** The module docstring
 > advertises "6 advanced post-processing techniques." That refers to an
 > `AudioProcessor` class in the file (de-esser, spectral subtraction, formant
 > enhancement, voice-activity detection, adaptive gating, a multiband
@@ -130,7 +130,7 @@ extraction moves from ffmpeg-python to `torchaudio.load`, export moves from
 ffmpeg-python to a raw `subprocess` call, and chunk overlap is dropped
 entirely (a regression from v0.3.x, fixed again in v0.4.1).
 
-> ⚠️ **Docstring/code mismatch, v0.4.0.** A comment labels this stage
+> **Docstring/code mismatch, v0.4.0.** A comment labels this stage
 > "De-esser + EQ cleanup (<80Hz rumble, >12kHz artifacts)," but that part of
 > the function is an unexecuted placeholder comment
 > (`# Basic butterworth filters would go here`) — no filter ever runs. Only
@@ -239,11 +239,11 @@ Same backbone as v0.4.4. What's new: two faster separator choices (the
 OpenVINO-accelerated Voc_FT fast engine, now default, and MRX dialogue), and
 the "keep sound effects" branch — a parallel separation call that extracts
 an effects stem and mixes it back in after the VAD gate, scaled to sit at
-roughly its original level relative to the dialogue. Not yet on the
-releases page as prebuilt binaries as of this writing; see the README's
-[Download](../README.md#-download) section for current status. This
-diagram is identical to the one in the README's
-[Pipeline section](../README.md#-pipeline).
+roughly its original level relative to the dialogue. This is the version
+on the [releases page](https://github.com/mAbEngineers/Music-Assassin/releases)
+today; see the README's [Download](../README.md#download) section for exact
+asset links. The diagram there covers the same ground as the two here, laid
+out more compactly.
 
 ---
 
