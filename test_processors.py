@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Music Assassin v0.4.4 — Safe Processor Test Suite
+Music Assassin v0.4.5 — Safe Processor Test Suite
 
 Tests every filter / enhancer / separator with:
   - A 10-second audio clip for filters, VAD, enhancers
@@ -143,7 +143,7 @@ def ram_guard(label):
 
 # ─── Mock tkinter for headless import ────────────────────────────────────────
 _log.info("=" * 60)
-_log.info(f"Music Assassin v0.4.4 Processor Tests  —  {run_ts}")
+_log.info(f"Music Assassin v0.4.5 Processor Tests  —  {run_ts}")
 _log.info(f"Log file: {log_path}")
 _log.info("=" * 60)
 _log.info(f"System RAM at start: {ram_str()}")
@@ -169,11 +169,11 @@ for attr in ("Progressbar", "Combobox", "Style"):
 sys.modules["tkinter.scrolledtext"].ScrolledText = lambda *a, **kw: None
 
 # ─── Import v0.4.4 ────────────────────────────────────────────────────────────
-_log.info("Importing MusicAssassinGUI_v0.4.4…")
+_log.info("Importing MusicAssassinGUI_v0.4.5…")
 import importlib.util as _ilu
 _spec = _ilu.spec_from_file_location(
     "music_assassin_v044",
-    os.path.join(REPO, "MusicAssassinGUI_v0.4.4.py"),
+    os.path.join(REPO, "MusicAssassinGUI_v0.4.5.py"),
 )
 app = _ilu.module_from_spec(_spec)
 _spec.loader.exec_module(app)

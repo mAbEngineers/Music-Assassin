@@ -27,7 +27,7 @@ from pathlib import Path
 import numpy as np
 
 REPO = Path(__file__).resolve().parent.parent
-APP_FILE = REPO / "MusicAssassinGUI_v0.4.4.py"
+APP_FILE = REPO / "MusicAssassinGUI_v0.4.5.py"
 
 _app = None  # cached module
 

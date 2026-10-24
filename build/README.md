@@ -17,11 +17,13 @@ build/
 ├── MusicAssassin_v0.3.3.spec
 ├── MusicAssassin_v0.4.0.spec         (Demucs only)
 ├── MusicAssassin_v0.4.1.spec         (Demucs + Spleeter)
-├── MusicAssassin_v0.4.4.spec         (fast engine + all separators — current)
+├── MusicAssassin_v0.4.4.spec         (VAD + DeepFilterNet)
+├── MusicAssassin_v0.4.5.spec         (fast engine + all separators — current)
 ├── MusicAssassin_v0.5.0.spec
 ├── runtime_hook_v0.4.0.py
 ├── runtime_hook_v0.4.1.py
-├── runtime_hook_v0.4.4.py            (sets MA_BUNDLED_MODEL_DIR)
+├── runtime_hook_v0.4.4.py
+├── runtime_hook_v0.4.5.py            (sets MA_BUNDLED_MODEL_DIR)
 ├── runtime_hook_v0.5.0.py
 ├── requirements_packaging.txt
 └── output_v*/                        (build outputs, gitignored)
@@ -34,17 +36,17 @@ build/
 ### Linux / macOS
 ```bash
 chmod +x build/build.sh
-./build/build.sh 0.4.4
+./build/build.sh 0.4.5
 ```
 
 ### Windows
 ```batch
-build\build.bat 0.4.4
+build\build.bat 0.4.5
 ```
 
 ### With a specific venv
 ```bash
-VENV_PATH=$HOME/.venvs/music-assassin ./build/build.sh 0.4.4
+VENV_PATH=$HOME/.venvs/music-assassin ./build/build.sh 0.4.5
 ```
 
 ---
@@ -61,14 +63,15 @@ VENV_PATH=$HOME/.venvs/music-assassin ./build/build.sh 0.4.4
 | **0.4.0** | `./build.sh 0.4.0` | **Demucs only** | 3.8+ | Stable |
 | **0.4.1** | `./build.sh 0.4.1` | **Demucs + Spleeter** | 3.8–3.11 | Stable |
 | 0.4.2 | `./build.sh 0.4.2` | Demucs + Spleeter + MDX-Net | 3.9–3.11 | Stable |
-| **0.4.4** | `./build.sh 0.4.4` | **Fast Voc_FT engine (OpenVINO) + Demucs + Spleeter + MDX-Net; keep effects** | 3.9–3.12 | **Current** |
+| 0.4.4 | `./build.sh 0.4.4` | Demucs + Spleeter + MDX-Net + VAD + DeepFilterNet | 3.9–3.12 | Stable |
+| **0.4.5** | `./build.sh 0.4.5` | **Fast Voc_FT engine (OpenVINO) + Demucs + Spleeter + MDX-Net; keep effects** | 3.9–3.12 | **Current** |
 | 0.5.0 | `./build.sh 0.5.0` | Demucs only (ONNX streaming) | 3.9+ | Experimental |
 
 ---
 
 ## Environment Setup
 
-### v0.4.4 (Current) — Python 3.9–3.12
+### v0.4.5 (Current) — Python 3.9–3.12
 
 ```bash
 bash setup_v044.sh $HOME/.venvs/music-assassin   # installs openvino, pyloudnorm and the rest
@@ -125,8 +128,8 @@ pip install demucs torch torchaudio pyinstaller
 - Includes: PyTorch, Demucs, Spleeter, TensorFlow 2.12
 - Size: ~2–2.5 GB
 
-### v0.4.4 — fast engine + all separators (Current)
-- The spec builds from `versions/MusicAssassinGUI_v0.4.4.py`, **not** the root copy. Keep the two identical.
+### v0.4.5 — fast engine + all separators (Current)
+- The spec builds from `versions/MusicAssassinGUI_v0.4.5.py`, **not** the root copy. Keep the two identical.
 - Includes: everything in v0.4.2, plus DeepFilterNet, Silero VAD, OpenVINO and `fast_separation.py`.
 - **OpenVINO** has no PyInstaller hook, so the spec collects it itself:
   - It keeps `libs/` together, because libopenvino looks for its plugins next to itself.
@@ -134,9 +137,9 @@ pip install demucs torch torchaudio pyinstaller
 - **Models are bundled:** Voc_FT, MRX and CDX23 (151 MB) are copied from the build machine's model cache (`~/.cache/music-assassin/models`, or `MA_MODEL_DIR`) into `ma_models/`.
   - The runtime hook points `MA_BUNDLED_MODEL_DIR` there, so the app works offline from the first run.
   - The spec warns, and the bundle downloads on first use, if the cache wasn't warmed.
-- **Size:** about 890 MB on Linux (2026-10-23). The v0.4.4 spec also trims bundle bloat; see commit `e9327e3`.
+- **Size:** about 890 MB on Linux (2026-10-23). The v0.4.5 spec also trims bundle bloat; see commit `e9327e3`.
 - **Check after building:** the app log should say `Fast engine: True (openvino)`. If it says `onnxruntime`, OpenVINO wasn't collected and separation will be roughly 2× slower.
-- **Windows CI** (`.github/workflows/build-windows.yml`) installs openvino and pyloudnorm, warms the models, and fails if the engine isn't on OpenVINO. It has not been run since these changes.
+- **Windows CI** (`.github/workflows/build-windows.yml`) installs openvino and pyloudnorm, warms the models, and fails if the engine isn't on OpenVINO. It still needs a `workflow_dispatch` run for the v0.4.5 build.
 
 ### v0.4.2 — Demucs + Spleeter + MDX-Net
 - Includes: PyTorch, Demucs, Spleeter, TensorFlow 2.12, onnxruntime, audio-separator

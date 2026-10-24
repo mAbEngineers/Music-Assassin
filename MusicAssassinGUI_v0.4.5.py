@@ -1,5 +1,5 @@
 """
-Music Assassin Pro v0.4.4 - MDX-NET / DEMUCS / SPLEETER EDITION
+Music Assassin Pro v0.4.5 - MDX-NET / DEMUCS / SPLEETER EDITION
 Advanced triple-source separation with intelligent pre/post-filtering
 + Choose between MDX-Net (vocals-only, fast CPU), DEMUCS (natural) or Spleeter (4-stems)
 + 3 processing modes (Normal/Balanced/Aggressive)
@@ -8,7 +8,16 @@ Advanced triple-source separation with intelligent pre/post-filtering
 + Optimized chunked processing (low memory usage)
 + Compact formal UI with real-time feedback
 
-v0.4.4 additions (over v0.4.4):
+v0.4.5 additions (over v0.4.4):
++ Fast separation engine (fast_separation.py): Voc_FT on OpenVINO (BF16 where
+  the CPU supports it, onnxruntime fallback) — the new default separator,
+  ~4× faster. A 10-min episode runs in about 58 s end to end on a 16-core CPU.
++ Keep sound effects (Off / Fast MRX / Quality CDX23) with an effects level
+  control; effects are separated in parallel and mixed back after the VAD gate.
++ "MRX dialogue" fastest separator option.
++ Crash logging so failures leave evidence in the log.
+
+v0.4.4 additions (over v0.4.2):
 + VAD Gate (Silero VAD) — silences non-vocal gaps after separation; removes
   residual music bleed between lyric phrases. Torch-based, CPU-light (~1 MB model).
 + DeepFilterNet enhancement — learned speech denoiser applied after separation;
@@ -201,7 +210,7 @@ logging.getLogger("urllib3").setLevel(logging.ERROR)
 logging.getLogger("torch").setLevel(logging.ERROR)
 
 _log.info("=" * 60)
-_log.info("Music Assassin v0.4.4  —  session start")
+_log.info("Music Assassin v0.4.5  —  session start")
 _log.info(f"Log file: {_LOG_PATH}")
 _log.info(f"DEMUCS available: {DEMUCS_AVAILABLE}  |  Spleeter: {SPLEETER_AVAILABLE}  |  MDX-Net: {AUDIO_SEPARATOR_AVAILABLE}"
           f"  |  Fast engine: {FAST_ENGINE_AVAILABLE}"
@@ -2039,7 +2048,7 @@ def setFrames(root):
 
     Label(title_row, text="Music Assassin Pro",
           font=("Segoe UI", 15, "bold"), bg='#0f0f1c', fg=TEXT).pack(side="left")
-    Label(title_row, text="v0.4.4",
+    Label(title_row, text="v0.4.5",
           font=("Segoe UI", 10), bg='#0f0f1c', fg=ACCENT).pack(side="left", padx=(6, 0), pady=4)
     Label(title_row, text="MDX-Net / DEMUCS / Spleeter  \u2022  VAD  \u2022  DeepFilter  \u2022  INT8",
           font=("Segoe UI", 8), bg='#0f0f1c', fg=MUTED).pack(side="right", pady=4)
@@ -2493,7 +2502,7 @@ def on_closing():
 
 if __name__ == "__main__":
     root = Tk()
-    root.wm_title("Music Assassin Pro v0.4.4")
+    root.wm_title("Music Assassin Pro v0.4.5")
     root.geometry("720x660")
     root.configure(background='#0d0d14')
     root.minsize(640, 560)
@@ -2505,7 +2514,7 @@ if __name__ == "__main__":
         os.environ['TK_LIBRARY'] = '/usr/share/tcltk/tk8.6'
         root.destroy()
         root = Tk()
-        root.wm_title("Music Assassin Pro v0.4.4")
+        root.wm_title("Music Assassin Pro v0.4.5")
         root.geometry("720x660")
         root.configure(background='#0d0d14')
         root.minsize(640, 560)
@@ -2519,7 +2528,7 @@ if __name__ == "__main__":
     a1.configure(command=lambda: [files.clear(), listbox.delete(0, 'end'), update_status("Queue cleared")])
 
     print("=" * 55)
-    print("Music Assassin Pro v0.4.4 - MDX-Net/DEMUCS/SPLEETER")
+    print("Music Assassin Pro v0.4.5 - MDX-Net/DEMUCS/SPLEETER")
     print("=" * 55)
     print(f"Fast engine:         {FAST_ENGINE_AVAILABLE}  (OpenVINO: {importlib.util.find_spec('openvino') is not None})")
     print(f"MDX-Net available:   {AUDIO_SEPARATOR_AVAILABLE}")
