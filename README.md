@@ -70,6 +70,38 @@ for the full table.
 
 ---
 
+## 🔀 Pipeline
+
+How a file actually moves through the app today (default settings; optional
+stages are dashed). Verified against the current processing code, not just
+the docstrings.
+
+```mermaid
+flowchart TD
+    IN([Input audio / video]) --> EXTRACT[Extract audio track<br/>ffmpeg, mono]
+    EXTRACT --> PRE[Pre-filter<br/>noise gate + high-pass]
+    PRE --> SEP[Separate vocals<br/>Voc_FT fast engine · OpenVINO — default<br/>or MDX-Net / Demucs / Spleeter]
+    SEP --> POST[Post-filter<br/>harmonic rejection + notch filters]
+    POST --> ENH{{DeepFilterNet cleanup<br/>optional}}
+    ENH --> VAD{{VAD gate · Silero<br/>optional, runs last}}
+    SEP -.->|keep sound effects on| FX[Separate effects stem<br/>MRX or CDX23, in parallel]
+    VAD --> MIX[Mix effects back in]
+    FX -.-> MIX
+    MIX --> OUT([Export<br/>video + subtitles preserved])
+
+    classDef optional stroke-dasharray: 4 3
+    class ENH,VAD optional
+```
+
+The VAD gate deliberately runs *after* the cleanup pass, not before —
+DeepFilterNet needs a continuous signal to build its noise model, and gating
+first would fragment the audio. This pipeline has grown in stages since
+v0.0.1 (raw Spleeter, no filtering at all); see
+[`docs/PIPELINE_EVOLUTION.md`](docs/PIPELINE_EVOLUTION.md) for a diagram of
+every version where the shape of it changed.
+
+---
+
 ## 📥 Download
 
 Prebuilt, ready to run — no Python install needed.
