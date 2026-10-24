@@ -100,6 +100,12 @@ risk, do not run bare" — BS-RoFormer, MelBand-RoFormer, `htdemucs_ft`,
 `mdx_extra`, and MRX (R2) — are screenable on the big machine. That reopens
 candidates rejected for a reason that no longer binds everywhere.
 
+**And one of them was never really OOM-risky at all.** On 2026-09-08 the
+htdemucs OOM turned out to be an app bug (`segment=CHUNK_SEC` forcing a 60 s
+transformer context); fixed, it peaks at 1.24 GB, well inside the 4-core box's
+budget. See R7. The lesson generalises: before attributing a resource failure
+to a model, check what the app is asking the model to do.
+
 **The trap:** RTF measured on 32 cores says nothing about the 4-core target,
 and mixing the two silently corrupts a comparison table whose whole value is
 that its rows are comparable.
@@ -133,6 +139,7 @@ Current state of that answer:
 | Candidate | RTF | RAM | Status |
 |---|---|---|---|
 | sherpa-onnx Spleeter 2-stem int8 | **0.067** | ~600 MB | Only RT-capable separator ever found. **Quality never confirmed by ear** (R3). |
+| **DEMUCS htdemucs (INT8)** | **0.177** ⚠️ | **~1.24 GB** | **Reinstated 2026-09-08** — previously recorded as OOM-killed and unusable; that was the `segment=60` app bug, not the model (R7). 2.5× faster than the current default in a third of the memory. Not yet A/B'd by ear. ⚠️ measured at 4 threads on the 32-core box. |
 | MDX-Net Voc_FT | 0.45 | ~3.3 GB | v0.4.4's default. Good, not realtime. |
 | Everything else in §1 of the comparison table | ≥1.4 | 2.8–7 GB | Not realtime. |
 
@@ -353,36 +360,85 @@ numbers on that machine are meaningless for the target, and their value here
 is as a **quality reference point** for H1's true-stem tier — a better ceiling
 than demucs — rather than as shippable candidates.
 
+### R7. htdemucs, reinstated — re-measure and A/B by ear ⭐ new 2026-09-08
+
+Added after a crash report from a v0.4.4 release build turned out to be an app
+bug with much wider consequences than the crash.
+
+`separate_with_demucs` passed `segment=CHUNK_SEC` (60) to `apply_model`.
+`CHUNK_SEC` is the app's *outer* chunk — a bound on the numpy array in RAM.
+demucs's `segment` is the model's *internal context window*. htdemucs is a
+transformer with a fixed 7.8 s `training_length`, so a 60 s segment made
+`apply_model` pad the input to 60 s and `forward` reshape it back to 7.8 s.
+
+Measured same-machine A/B on one 60 s chunk (4 threads, 32-core box):
+
+| | `segment=60` (shipped) | fixed |
+|---|---|---|
+| result | RuntimeError | OK |
+| peak RSS | 14,929 MB | **1,237 MB** |
+| wall time | 28.3 s, then crashed | **10.5 s** (RTF 0.177) |
+
+**Consequences beyond the crash.** Attention is quadratic in context length, so
+this is also the whole of the ">6–7 GB, still climbing, OOM-killed" figure that
+got Demucs written off. The `~1.2 GB` estimate that the benchmark doc dismissed
+as "5-6× too low" was right. htdemucs is practical on the 4-core box, and at RTF
+0.177 it is ~2.5× faster than MDX-Net Voc_FT, the app's current default.
+
+What remains, in order:
+
+1. **Re-measure on the 4-core box** per §1.4 — the RTF above does not belong in
+   the comparison table until it is measured there. Cheapest high-value
+   benchmark currently available.
+2. **A/B htdemucs against Voc_FT by ear** on this project's own content. The
+   quality numbers taken so far (−60.2 dB suppression, −0.02 dB retention) are
+   against demucs-derived ground truth and therefore circular — see §3. This
+   is the listening test that decides whether the app's default engine changes.
+3. **Re-test `htdemucs_ft`**, whose only recorded reason for never being tried
+   was the OOM that turned out to be this bug.
+
+A methodological note worth keeping: the benchmark doc had already written down
+the decisive fact — that the old estimate "appears to have never been measured
+against this exact `apply_model` call shape (`segment=60, overlap=0.25`)" — and
+read it as the estimate being wrong rather than the call shape. The evidence was
+present and the inference went the wrong way.
+
 ---
 
 ## 6. Sequenced plan
 
 **Track 1 — this week, no new infrastructure**
 
-1. **R1** — benchmark `2_HP-UVR`, `Inst_HQ_4`, `kuielab_a` for speed and RAM
-   on the 4-core box. Zero setup; `audio-separator` is installed.
-2. **R3** — the sherpa Spleeter int8 listening session. Unblocks a decision
-   that has been open since July.
+1. **R7.1** — re-measure fixed htdemucs on the 4-core box. Smallest job on
+   this list and it corrects a headline row in the comparison table.
+2. **R1** — benchmark `2_HP-UVR`, `Inst_HQ_4`, `kuielab_a` for speed and RAM
+   on the 4-core box. Zero setup; `audio-separator` is installed. Run it in the
+   same sitting as R7.1 — same harness, same machine, comparable rows.
+3. **R7.2 + R3** — one listening session covering both open ear tests:
+   htdemucs vs Voc_FT, and sherpa Spleeter int8. Between them they decide the
+   app's default engine and a latency-budget question open since July.
 
 **Track 2 — the enabler, ~3–5 days**
 
-3. **H1** — true-stem corpus tier (MUSDB18-HQ + DnR), licences verified first.
-4. **H2** — extract shared metrics + corpus module; add this repo's offline
+4. **H1** — true-stem corpus tier (MUSDB18-HQ + DnR), licences verified first.
+   R7.2 raises the priority of this: htdemucs now needs an unbiased score, and
+   demucs-derived ground truth cannot give it one.
+5. **H2** — extract shared metrics + corpus module; add this repo's offline
    separator driver.
-5. **H3** — emit `model_card.json` from benchmark runs (folded into H2).
+6. **H3** — emit `model_card.json` from benchmark runs (folded into H2).
 
 **Track 3 — after Track 2**
 
-6. **R2** — MRX, screened on the big machine, scored on DnR.
-7. **R6** — Roformer/`htdemucs_ft` as quality reference points.
+7. **R2** — MRX, screened on the big machine, scored on DnR.
+8. **R6** — Roformer/`htdemucs_ft` (now also R7.3) as quality reference points.
 
 **Track 4 — background, starts now**
 
-8. **R4** — HS-TasNet training, running in parallel throughout.
+9. **R4** — HS-TasNet training, running in parallel throughout.
 
 **Deferred**
 
-9. **R5** — bleed suppressor and de-reverb post-passes, for a v0.4.5 offline
+10. **R5** — bleed suppressor and de-reverb post-passes, for a v0.4.5 offline
    quality pass.
 
 ---
@@ -444,10 +500,12 @@ here:
 
 From this repo's own record:
 
-- **Demucs `htdemucs` cannot be memory-bounded by shortening its segment** —
-  the transformer's `training_length` (~7.8 s) is fixed and requesting less
-  throws a reshape error. Peak was >6–7 GB and still climbing on the 4-core
-  box. This is what R6 revisits on different hardware, not a solved problem.
+- ~~**Demucs `htdemucs` cannot be memory-bounded by shortening its
+  segment.**~~ **Disproven 2026-09-08 — this entry was wrong and is kept only
+  so it is not re-derived.** The reshape error was real, but its cause was the
+  app passing `segment=CHUNK_SEC` (60), forcing a context *far above* the
+  model's native 7.8 s rather than below it. Removing the kwarg: peak RSS
+  14,929 MB → 1,237 MB, crash → success, RTF 0.177. See R7.
 - **`dpdfnet8`** is bandwidth-capped at 8 kHz *and* slower than
   `dpdfnet2_48khz_hr`. Dominated on every axis.
 
