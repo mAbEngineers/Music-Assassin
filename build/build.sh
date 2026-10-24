@@ -66,7 +66,11 @@ VERSION="${1#v}"
 
 EXECUTABLE_FILE="versions/MusicAssassinGUI_v${VERSION}.py"
 SPEC_FILE="build/MusicAssassin_v${VERSION}.spec"
-BUILD_DIR="build/output_v${VERSION}"
+# BUILD_OUT lets you write the build off a slow or sftp/FUSE-mounted working
+# tree onto local disk. PyInstaller's archive writer fails with
+# "OSError: [Errno 95] Operation not supported" when packaging onto such a
+# mount, so set e.g. BUILD_OUT=$HOME/ma_build when the repo is mounted.
+BUILD_DIR="${BUILD_OUT:-build}/output_v${VERSION}"
 
 # Verify input is valid
 case $VERSION in

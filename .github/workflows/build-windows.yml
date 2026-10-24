@@ -96,6 +96,11 @@ jobs:
         # The engine silently falls back to onnxruntime when OpenVINO is
         # missing or fails to compile, which would ship a build at a fraction
         # of the intended speed. Fail here instead.
+        # `shell: python` runs a temp script whose own dir (not the repo root)
+        # is on sys.path, so set PYTHONPATH or `import fast_separation` raises
+        # ModuleNotFoundError.
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         shell: python
         run: |
           import numpy as np, fast_separation as f
