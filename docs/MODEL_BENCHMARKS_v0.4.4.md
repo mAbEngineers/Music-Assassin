@@ -5,6 +5,8 @@
 > dpdfnet variants, subtraction architecture, mid/side pre-filter, OpenVINO),
 > see `docs/COMPREHENSIVE_METHOD_COMPARISON.md`. This document covers only the
 > initial v0.4.4 benchmark pass (Tables 1–2 below) plus the round 3–5 addenda.
+>
+> **Speed numbers here predate the fast engine (2026-10).** For current timings (Voc_FT on OpenVINO, about 58 s per 10 min end to end, plus keep-effects costs), see `docs/OFFLINE_SPEED_RESEARCH.md`.
 
 Empirically measured on **2026-07-04**, on the developer's actual machine: 4-core CPU,
 11 GB total RAM (typically 4-6 GB available under normal desktop load — VSCode +

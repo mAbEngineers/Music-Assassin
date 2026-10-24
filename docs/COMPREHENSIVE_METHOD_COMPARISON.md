@@ -95,7 +95,7 @@ need this step.
 
 | Method | Speed impact | Applies to | CPU-only? | Notes |
 |---|---|---|---|---|
-| **OpenVINO execution provider** (`onnxruntime-openvino`) | **~16% faster** (2909ms vs 3467ms, raw UVR model inference) | Only the `audio-separator` path (plain onnxruntime) | Yes | sherpa-onnx bundles its own statically-built onnxruntime and won't pick up an externally-installed OpenVINO provider without a from-source rebuild. Partial op support causes fallback to `CPUExecutionProvider` for unsupported ops, capping the win. Tested in an isolated throwaway venv to avoid destabilizing the working dependency set. |
+| **OpenVINO execution provider** (`onnxruntime-openvino`) | **~16% faster** (2909ms vs 3467ms, raw UVR model inference) | Only the `audio-separator` path (plain onnxruntime) | Yes | sherpa-onnx bundles its own statically-built onnxruntime and won't pick up an externally-installed OpenVINO provider without a from-source rebuild. Partial op support causes fallback to `CPUExecutionProvider` for unsupported ops, capping the win. Tested in an isolated throwaway venv to avoid destabilizing the working dependency set. **Superseded 2026-10-22:** this plugin runs FP32 on CPU. Native OpenVINO with BF16 compute (`fast_separation.py`) is about 5× faster than audio-separator on a 16-core Zen 5 CPU, and is now the app's default (see `OFFLINE_SPEED_RESEARCH.md`). |
 | Self-quantization (int8, dynamic) | **Negative** — see §1, "Self-quantized int8 Inst_HQ_3" | Conv/STFT-bound models | Yes | Only pays off for Linear/MatMul-bound models (htdemucs's targeted quantization). Don't apply blindly to separator models. |
 
 ---

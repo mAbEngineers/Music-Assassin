@@ -28,11 +28,14 @@ corpora, so they classify music as speech and leave it alone.
 
 The app's plumbing (separation → DSP → enhancer → VAD) is fully working — the
 enhancer stage just isn't, and can't be, the music remover. Actual music removal
-requires a source-separation model (Demucs/MDX-Net/UVR/Spleeter class). **A
-real-time-capable separator is the key open problem for this repo**: current
-best measured option is a chunked `sherpa-onnx` Spleeter-2stem-int8 loop (RTF
-0.067 on a 4-core CPU — see the research doc), with HS-TasNet (no public
-weights yet) and RT-STT (no code released yet) as the architectures to watch.
+requires a source-separation model (Demucs/MDX-Net/UVR/Spleeter class).
+
+**Offline, this is solved.** The fast engine runs Voc_FT separation plus cleanup
+in about 58 s per 10 min of audio on a 16-core CPU, and can keep sound effects
+(see `docs/OFFLINE_SPEED_RESEARCH.md`). **Live, it is still the open problem.**
+A real separator needs about 1 s or more of look-ahead, which breaks lip-sync
+unless video players are told about the delay. The live app's status is in
+`music-assassin-live` and in `docs/LIVE_SFX_HANDOVER.md`.
 
 ---
 
@@ -45,9 +48,10 @@ weights yet) and RT-STT (no code released yet) as the architectures to watch.
 | I'm curious about experimental next-gen models | v0.4.2-RT (research branch, not for daily use) |
 | I care about minimal startup RAM over features | v0.5.1 (parked side-experiment, see note below) |
 
-**Latest / Recommended: v0.4.4** — Demucs + Spleeter + MDX-Net separation, with
-a VAD silence gate and optional DeepFilterNet cleanup on top. Requires Python
-3.9–3.12 (3.12 tested).
+**Latest / Recommended: v0.4.4** — fast Voc_FT separation engine (OpenVINO),
+with a VAD silence gate, optional DeepFilterNet cleanup and an optional "keep
+sound effects" path. Demucs, Spleeter and the original MDX-Net engine remain
+selectable. Requires Python 3.9–3.12 (3.12 tested).
 
 > **A note on the version numbers.** Development branched at v0.4.2 into two
 > separate experiments that were never merged back together: the **v0.4.x
@@ -101,6 +105,13 @@ source-separation models, and is the actively developed line today.
 - **v0.4.2**: + MDX-Net added as a third engine, via `audio-separator` (UVR-MDX-NET-Voc_FT and Kim_Vocal_2 models) — a vocals-only specialist, smaller (66–130 MB) and cleaner than the general-purpose 4-stem models. Requires Python 3.9+.
 - **v0.4.2-RT** *(research/testing branch, not a numbered release for daily use)*: A side branch for evaluating next-generation models before they're promoted into the main line. + MDX23C models (higher SDR than Voc_FT, but require torch and run slower on CPU). + Demucs extras: 6-stem separation (adds piano/guitar), Hybrid Demucs v3, quantized variants. + Optional test-time augmentation (runs the model twice and averages — small quality boost, 2× runtime cost). + Infrastructure stubs for HS-TasNet and RT-STT, two real-time architectures with no public trained weights yet — ready to activate the moment weights become available. + Experimental HPSS pre-filter and SpeechBrain MetricGAN+ post-filter, mirroring a DSP→AI→DSP pipeline design.
 - **v0.4.4** *(current / recommended)*: Builds on v0.4.2's three-engine pipeline and adds two new cleanup stages. + **VAD gate** (Silero VAD) — silences the gaps between spoken/sung lines where leftover music was bleeding through. + Optional **DeepFilterNet** pass — a learned speech-cleanup model that removes residual noise/artifacts left after separation. FIX global (not per-chunk) normalization, removing end-of-file static for good. FIX last-chunk fade-to-zero padding, removing a boundary artifact at chunk edges.
+  - *Fast engine update (branch `feat/fast-engine-keep-effects`, 2026-10):*
+    - + **Fast separation engine** (`fast_separation.py`): Voc_FT on OpenVINO, BF16 where the CPU supports it, with onnxruntime as fallback. A 10-min episode takes about 58 s end to end on a 16-core CPU, down from about 225 s for separation alone. It is the new default.
+    - + **Keep sound effects** (Off / Fast MRX / Quality CDX23), with an effects level control. Effects are separated in parallel and added back after the VAD gate.
+    - + "MRX dialogue" fastest separator option.
+    - FIX the window showed MDX-Net while the app actually ran DEMUCS at startup.
+    - FIX the one-time Silero VAD load (9–22 s) now happens in the background.
+    - Packaged builds bundle the three models and OpenVINO, giving a build of about 890 MB.
 
 ### Era 8 — CPU-Optimized Streaming Rewrite, parked experiment (v0.5.0 – v0.5.1)
 A separate architectural branch, not a continuation of v0.4.4 — see the
@@ -180,14 +191,17 @@ python versions/MusicAssassinGUI_v0.5.1.py
 ### Basic Usage (all versions)
 
 1. Launch the application.
-2. Select a separator engine from the dropdown (MDX-Net recommended for clean vocals).
+2. Select a separator engine from the dropdown ("Voc_FT · fast engine (Best)" is the v0.4.4 default).
+   Optionally turn on **Keep sound effects** in the Enhancement card.
 3. Click **Browse Files** to add audio/video files.
 4. Select a processing mode (Balanced recommended).
 5. Click **Start Processing**.
 6. Output is saved as `{filename}-vocals.{extension}` in the same folder.
 
 **Model guide**:
-- **MDX-Net Voc_FT** — fastest, ~66 MB, excellent vocals-only (best default)
+- **Voc_FT · fast engine** (v0.4.4) — same model as MDX-Net Voc_FT, about 5× faster; the default
+- **MRX dialogue** (v0.4.4) — fastest, lower quality; can produce dialogue and effects in one pass
+- **MDX-Net Voc_FT** — ~66 MB, excellent vocals-only (via audio-separator)
 - **MDX-Net Kim_v2** — slightly higher quality, ~130 MB, still fast on CPU
 - **DEMUCS htdemucs** — fast, natural-sounding, general 4-stem
 - **DEMUCS htdemucs_ft / mdx_extra** — higher quality, more RAM, slower
@@ -199,6 +213,8 @@ python versions/MusicAssassinGUI_v0.5.1.py
 
 | Feature | Introduced |
 |---|---|
+| Fast separation engine (OpenVINO, ~58 s per 10 min end to end) | v0.4.4 (fast engine update) |
+| Keep sound effects (MRX / CDX23) with level control | v0.4.4 (fast engine update) |
 | VAD silence gate (Silero) | v0.4.4 |
 | DeepFilterNet post-separation cleanup (optional) | v0.4.4 |
 | MDX-Net vocals-only separation (UVR) | v0.4.2+ |
@@ -224,11 +240,15 @@ python versions/MusicAssassinGUI_v0.5.1.py
 This repo doubles as a research lab for the underlying models — the docs below
 are the detailed record behind the summaries in this README:
 
+- **`HANDOVER.md`** — start here: current branch state, how to run and verify, known issues, next steps.
+- **`docs/OFFLINE_SPEED_RESEARCH.md`** — how the offline pipeline got under 1 min per 10 min of audio, with per-stage timings and the keep-effects measurements.
+- **`docs/SIMILAR_PROJECTS_RESEARCH.md`** — survey of similar tools and models, ways to keep sound effects, and live-latency findings.
+- **`docs/LIVE_SFX_HANDOVER.md`** — what the offline effects work means for the live app (a copy is in `music-assassin-live/docs/`).
 - **`docs/COMPREHENSIVE_METHOD_COMPARISON.md`** — master lookup table of every model/technique tried or researched (separators, enhancers, VAD, DSP, acceleration).
 - **`docs/MODEL_BENCHMARKS_v0.4.4.md`** — the v0.4.4 benchmark pass: speed/RAM measurements on real content.
 - **`docs/REALTIME_FILTER_RESEARCH.md`** — architecture research for turning this into a live, system-wide music filter (latency budgets, OS integration).
 - **`docs/REALTIME_MUSIC_REMOVAL_BUILD_GUIDE.md`** — per-OS technical build guide for a real-time desktop/mobile version.
-- **`docs/LIVE_APP_PLAN.md`** — the plan for splitting this into two repos: this one stays a research lab, a new `music-assassin-live` repo becomes a "volume booster"-style always-on app built on whichever model wins here.
+- **`docs/LIVE_APP_PLAN.md`** — the original plan for splitting this into two repos: this one stays a research lab, a new `music-assassin-live` repo becomes a "volume booster"-style always-on app built on whichever model wins here. The live repo's `docs/ARCHITECTURE.md` and `docs/ROADMAP.md` are now the maintained versions.
 - **`docs/SEPARATION_TECHNIQUES_RESEARCH.md`** — background research on source-separation techniques.
 
 ---
@@ -237,7 +257,7 @@ are the detailed record behind the summaries in this README:
 
 | Version | Python | Key deps |
 |---|---|---|
-| v0.4.4 | 3.9–3.12 (3.12 tested) | demucs, audio-separator, spleeter, torch, tensorflow, onnxruntime, sherpa-onnx, deepfilternet |
+| v0.4.4 | 3.9–3.12 (3.12 tested) | openvino, onnxruntime, pyloudnorm, demucs, audio-separator, spleeter, torch, tensorflow, sherpa-onnx, deepfilternet |
 | v0.4.2-RT | 3.9–3.11 | as v0.4.2, plus speechbrain (optional, ~300 MB) |
 | v0.4.2 | 3.9–3.11 | audio-separator, onnxruntime, demucs, torch, spleeter==2.4.2, tensorflow==2.12 |
 | v0.4.1 | 3.8–3.11 | demucs, torch, spleeter==2.4.2, tensorflow==2.12 |
@@ -260,7 +280,8 @@ Feedback and contributions welcome. Planned improvements:
 - GPU acceleration toggle
 - SCNet / RoFormer models for higher-quality separation (GPU tier)
 - Mid/side center-channel extraction as a pre-filter (validated in research, not yet wired into the app)
-- Real-time-capable separator (HS-TasNet / RT-STT) once public weights or code exist
+- Real-time-capable separator for the live app (see `HANDOVER.md` §7 for the current plan)
+- Stereo output (v0.4.4 currently processes and exports mono)
 
 ---
 
@@ -272,9 +293,11 @@ Feedback and contributions welcome. Planned improvements:
 - **DeepFilterNet** — Rikorose
 - **Silero VAD** — Silero Team
 - **sherpa-onnx** — k2-fsa
+- **OpenVINO** — Intel
+- **MRX / CDX23 dialogue–music–effects models** — Mitsubishi Electric Research Labs (MRX); ZFTurbo / Sound Demixing Challenge 2023 (CDX23)
 - **FFmpeg** — Video/audio processing
 - **SciPy** — Digital signal processing
 
 ---
 
-*Music Assassin v0.4.4 — Demucs + Spleeter + MDX-Net separation, with VAD gating and DeepFilterNet cleanup on top*
+*Music Assassin v0.4.4 — fast Voc_FT engine plus Demucs, Spleeter and MDX-Net separation, with VAD gating, DeepFilterNet cleanup and optional sound-effect keeping*
