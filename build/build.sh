@@ -267,14 +267,100 @@ if command -v dpkg-deb &> /dev/null; then
     cp "$executable_path" "$DEB_BIN_DIR/music-assassin"
     chmod 755 "$DEB_BIN_DIR/music-assassin"
 
+    # ---- desktop entry + icon ------------------------------------------
+    # Without these the package installs a binary and nothing else, so the
+    # app never appears in the application menu and looks "not installed"
+    # to anyone who doesn't know to run `music-assassin` in a terminal.
+    DEB_APPS_DIR="$DEB_ROOT/usr/share/applications"
+    mkdir -p "$DEB_APPS_DIR"
+
+    # Use a repo icon when one exists, otherwise fall back to a stock theme
+    # icon name so the entry still renders. Drop a PNG at build/icon.png and
+    # it gets picked up automatically -- no change needed here.
+    ICON_SRC="$(dirname "$0")/icon.png"
+    ICON_NAME="audio-x-generic"
+    if [ -f "$ICON_SRC" ]; then
+        ICON_TOOL=""
+        command -v convert >/dev/null 2>&1 && ICON_TOOL=convert
+        [ -z "$ICON_TOOL" ] && command -v ffmpeg >/dev/null 2>&1 && ICON_TOOL=ffmpeg
+        if [ -n "$ICON_TOOL" ]; then
+            ICON_NAME="music-assassin"
+            for sz in 16 22 24 32 48 64 128 256; do
+                ICON_DIR="$DEB_ROOT/usr/share/icons/hicolor/${sz}x${sz}/apps"
+                mkdir -p "$ICON_DIR"
+                if [ "$ICON_TOOL" = convert ]; then
+                    convert "$ICON_SRC" -filter Lanczos -resize "${sz}x${sz}" \
+                        "$ICON_DIR/music-assassin.png" 2>/dev/null
+                else
+                    ffmpeg -nostdin -v error -i "$ICON_SRC" \
+                        -vf "scale=${sz}:${sz}:flags=lanczos" \
+                        "$ICON_DIR/music-assassin.png" -y 2>/dev/null
+                fi
+            done
+            echo "  icon rendered at 8 sizes (via $ICON_TOOL)"
+        else
+            echo "  build/icon.png found but neither ImageMagick nor ffmpeg available — using stock icon"
+        fi
+    fi
+
+    cat > "$DEB_APPS_DIR/music-assassin.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Music Assassin
+GenericName=Vocal Separator
+Comment=Remove background music from audio and video files (offline, CPU)
+Exec=/usr/bin/music-assassin
+Icon=${ICON_NAME}
+Terminal=false
+Categories=AudioVideo;Audio;AudioVideoEditing;
+Keywords=vocals;separation;demucs;music;removal;karaoke;
+StartupNotify=true
+EOF
+
     cat > "$DEB_CTRL_DIR/control" <<EOF
 Package: music-assassin
 Version: ${VERSION}
+Section: sound
+Priority: optional
 Architecture: amd64
-Maintainer: Music-Assassin <noreply@music-assassin.local>
-Description: Music-Assassin v${VERSION}
- AI-powered vocal and instrument separator (DEMUCS/Spleeter).
+Depends: ffmpeg
+Maintainer: mAbEngineers <noreply@music-assassin.local>
+Homepage: https://github.com/mAbEngineers/Music-Assassin
+Description: Offline AI vocal separator (Demucs / MDX-Net)
+ Removes background music from long audio and video files, leaving dialogue
+ and vocals. Runs entirely offline on CPU using open-source models -- no
+ cloud services and no paid APIs.
+ .
+ Separation via Demucs and MDX-Net, with a Silero VAD silence gate and an
+ optional DeepFilterNet cleanup pass. Subtitle tracks and video streams are
+ preserved; video is copied rather than re-encoded.
 EOF
+
+    # Refresh the desktop/icon caches so the entry shows up without a
+    # re-login. Both are best-effort: absent on minimal systems, and a
+    # failure here must not fail the install.
+    cat > "$DEB_CTRL_DIR/postinst" <<'EOF'
+#!/bin/sh
+set -e
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database -q /usr/share/applications || true
+fi
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -qtf /usr/share/icons/hicolor || true
+fi
+exit 0
+EOF
+
+    cat > "$DEB_CTRL_DIR/postrm" <<'EOF'
+#!/bin/sh
+set -e
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database -q /usr/share/applications || true
+fi
+exit 0
+EOF
+
+    chmod 755 "$DEB_CTRL_DIR/postinst" "$DEB_CTRL_DIR/postrm"
 
     DEB_OUT="$BUILD_DIR/dist/MusicAssassin_v${VERSION}.deb"
     # Use -Znone: the binary is already UPX-compressed; recompressing a 3+ GB
