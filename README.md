@@ -5,6 +5,31 @@ example, stripping the background music out of an anime episode or a movie so
 only dialogue and sound effects remain. It works entirely offline, on CPU, using
 open-source AI models. No cloud services, no paid APIs.
 
+## Download — v0.4.4 (latest)
+
+Prebuilt and ready to run. No Python install needed.
+
+| Platform | File | Size |
+|---|---|---|
+| **Windows** 10/11 (x64) | [`MusicAssassin_v0.4.4.exe`](https://github.com/mAbEngineers/Music-Assassin/releases/download/v0.4.4/MusicAssassin_v0.4.4.exe) | 393 MB |
+| **Ubuntu / Debian** (x64) | [`MusicAssassin_v0.4.4.deb`](https://github.com/mAbEngineers/Music-Assassin/releases/download/v0.4.4/MusicAssassin_v0.4.4.deb) | 1.5 GB |
+| **Linux** (x64, portable) | [`MusicAssassin_v0.4.4`](https://github.com/mAbEngineers/Music-Assassin/releases/download/v0.4.4/MusicAssassin_v0.4.4) | 1.5 GB |
+
+- **Windows** — run the `.exe` directly, no install.
+- **Debian/Ubuntu** — `sudo dpkg -i MusicAssassin_v0.4.4.deb`, then run `music-assassin`.
+- **Linux portable** — `chmod +x MusicAssassin_v0.4.4 && ./MusicAssassin_v0.4.4`.
+
+Every build is CPU-only and runs fully offline. The default Demucs model
+(`htdemucs`) and Silero VAD are bundled; the alternate Demucs variants, the
+MDX-Net/UVR models and the optional enhancers download once on first use, which
+is what keeps the artifact under GitHub's 2 GB limit. Spleeter/TensorFlow is not
+included in the binaries — [run from source](#installation--usage) if you need
+that engine.
+
+[All releases →](https://github.com/mAbEngineers/Music-Assassin/releases)
+
+---
+
 This README explains what the project does, which version to use, and exactly
 what changed release-by-release — from the first proof-of-concept script to the
 current AI-powered pipeline.
@@ -240,7 +265,8 @@ python versions/MusicAssassinGUI_v0.5.1.py
 This repo doubles as a research lab for the underlying models — the docs below
 are the detailed record behind the summaries in this README:
 
-- **`HANDOVER.md`** — start here: current branch state, how to run and verify, known issues, next steps.
+- **`HANDOVER.md`** — **start here for the current state:** what is on the branch, how to run and verify it, known issues, and the agreed next steps.
+- **`docs/ROADMAP.md`** — **start here for direction:** the separator candidates, the corpus/harness work that has to precede them, and the open decisions.
 - **`docs/OFFLINE_SPEED_RESEARCH.md`** — how the offline pipeline got under 1 min per 10 min of audio, with per-stage timings and the keep-effects measurements.
 - **`docs/SIMILAR_PROJECTS_RESEARCH.md`** — survey of similar tools and models, ways to keep sound effects, and live-latency findings.
 - **`docs/LIVE_SFX_HANDOVER.md`** — what the offline effects work means for the live app (a copy is in `music-assassin-live/docs/`).
