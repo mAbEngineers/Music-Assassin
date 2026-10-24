@@ -106,7 +106,8 @@ Runs UVR-MDX-NET-Voc_FT on **OpenVINO**: BF16 compute where the CPU supports it 
 
 ## 5. Gotchas that cost time this round
 
-- **`git commit -F -` fails on this gvfs/sftp mount** ("could not read commit message"). Write the message to a file and use `-F <file>`.
+- **`git commit -F -` fails on this gvfs/sftp mount** ("could not read commit message"). On 2026-10-24, `-F <file>` with a file under `/tmp` failed the same way, even though the file existed. What works: `git commit -m "$(cat <file>)"`.
+- **`git push` can hang on this mount.** One timed out at 5 min; the retry took 21 s. Wrap it in `timeout` and retry.
 - **The repo path contains a colon** (`sftp:host=…`), so `PYTHONPATH=<repo>` silently splits it. Add the path with `sys.path.insert` instead.
 - **Session scratch space under `/tmp` is wiped on reboot.** One reboot lost the listening files and the effects test scripts. Keep anything worth keeping in `test_outputs/` (git-ignored).
 - **Check `uptime` before timing anything.** Other jobs on this machine pushed load to 20–47 and inflated timings by 25–60 %. The 58 s figure came from an idle run.
