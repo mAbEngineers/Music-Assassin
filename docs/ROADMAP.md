@@ -19,9 +19,54 @@ document is what's next, not what was intended.
 
 ---
 
+## 0. Status update — 2026-10-24
+
+**This roadmap was written 2026-09-07 against a dormant repo, with one
+correction (`c17266d`, "the OOM was our bug") added the next day. The repo is
+no longer dormant, and several items below have been overtaken.** The
+sections are kept as written, because the reasoning in them is still the
+record of why each candidate was chosen; dated notes mark what has changed.
+For the current state of the tree, read [`HANDOVER.md`](../HANDOVER.md)
+first — it is the live document and this one is the direction behind it.
+
+**A process note, not a model note.** `c17266d` is the commit above, and its
+own PR (#4) shows as MERGED on GitHub — but into the wrong base branch
+(`docs/download-links`, which PR #2 had already folded into `main`). The
+commit never reached `main` by that route. It reached this branch by a direct
+cherry-pick on 2026-10-24, and a second PR re-targeting `main` is needed to
+close the loop GitHub's merge button did not. Mentioned here because the same
+mistake — a merged-looking PR whose base branch was never `main` — is cheap
+to make again and easy to miss, since every other signal says "done."
+
+What changed between 2026-09-08 and 2026-10-24:
+
+| | |
+|---|---|
+| **`main` moved** | PRs #2, #3, #5 merged (htdemucs crash fix, packaging fixes, crash logging). PR #4 did not, per the note above. `main` had been at `e9327e3` since 2026-07-25. |
+| **A fast engine shipped** | `fast_separation.py`: Voc_FT on OpenVINO, BF16 where the CPU supports it. About **58 s per 10 min** of audio end to end on 16 cores, against 220–228 s for the old `audio-separator` path. It is now the app's default separator. |
+| **Sound-effects preservation shipped** | "Keep sound effects": MRX (fast) or CDX23 (quality), separated in parallel and added back after the VAD gate. |
+| **A quality harness was built here** | `quality_harness/` — true-stem corpora with no separator in the loop, and the metrics to score against them. |
+
+Net effect on the plan below: **R2 is no longer a candidate to screen — it
+shipped**, by ear and measured leakage rather than through R7/H1 as planned.
+R7.3 (re-test `htdemucs_ft`) has a first real number, but not the §1.4
+re-measure R7.1 still asks for. H1 and H2 are partly done, in a way that
+contradicts what H2 advised; see the note there. R1, R3, R4, R5, R6 and the
+rest of R7 are untouched and still stand.
+
+The one thing this update does **not** change is §3. Keep reading it.
+
+---
+
 ## 1. State of play
 
 ### 1.1 What this repo is now
+
+> **Superseded 2026-10-24.** The paragraph below described a dormant repo and
+> is kept for context. `main` has since taken PRs #2, #3, #5 (see §0 on PR
+> #4's base-branch problem), and the active branch
+> `feat/fast-engine-keep-effects` carries the fast engine, the keep-effects
+> pipeline and the quality harness.
 
 Last commit `e9327e3`, **2026-07-25** — clean, in sync with `origin/main`, and
 quiet for six weeks. That is not neglect: the split moved app work out, and
@@ -100,6 +145,12 @@ risk, do not run bare" — BS-RoFormer, MelBand-RoFormer, `htdemucs_ft`,
 `mdx_extra`, and MRX (R2) — are screenable on the big machine. That reopens
 candidates rejected for a reason that no longer binds everywhere.
 
+**And one of them was never really OOM-risky at all.** On 2026-09-08 the
+htdemucs OOM turned out to be an app bug (`segment=CHUNK_SEC` forcing a 60 s
+transformer context); fixed, it peaks at 1.24 GB, well inside the 4-core box's
+budget. See R7. The lesson generalises: before attributing a resource failure
+to a model, check what the app is asking the model to do.
+
 **The trap:** RTF measured on 32 cores says nothing about the 4-core target,
 and mixing the two silently corrupts a comparison table whose whole value is
 that its rows are comparable.
@@ -133,6 +184,7 @@ Current state of that answer:
 | Candidate | RTF | RAM | Status |
 |---|---|---|---|
 | sherpa-onnx Spleeter 2-stem int8 | **0.067** | ~600 MB | Only RT-capable separator ever found. **Quality never confirmed by ear** (R3). |
+| **DEMUCS htdemucs (INT8)** | **0.177** ⚠️ | **~1.24 GB** | **Reinstated 2026-09-08** — previously recorded as OOM-killed and unusable; that was the `segment=60` app bug, not the model (R7). 2.5× faster than the current default in a third of the memory. Not yet A/B'd by ear. ⚠️ measured at 4 threads on the 32-core box. |
 | MDX-Net Voc_FT | 0.45 | ~3.3 GB | v0.4.4's default. Good, not realtime. |
 | Everything else in §1 of the comparison table | ≥1.4 | 2.8–7 GB | Not realtime. |
 
@@ -166,11 +218,30 @@ exactly the class this method cannot rank. **Fix it with H1 before drawing
 conclusions from R2 or R6.** R1 is exempt: it is a *speed* screen, and speed
 does not depend on the reference.
 
+> **Update 2026-10-24 — partly addressed, deliberately.** `quality_harness/`
+> now scores against stems it builds itself, with no separator in the loop, so
+> the circularity is gone for anything it covers. Two caveats keep this section
+> open rather than closed:
+>
+> - Its Tier 1 sources are **synthetic** (harmonic buzz, chord pad, transients).
+>   Its own README is explicit that these are "good for regression and relative
+>   A/B, not for absolute perceptual claims". H1's recorded-stem datasets are
+>   still the thing that would let a candidate be scored absolutely.
+> - MRX and CDX23 were adopted on measured leakage plus the user's ear, not on
+>   a corpus score. That was the right call for shipping, but it means the
+>   promotion contract in H3 still has not been exercised once.
+
 ---
 
 ## 4. Workstream H — harness, corpus, and the promotion contract
 
 ### H1. A true-stem corpus tier ⭐ unblocks §3
+
+> **Partly done 2026-10-24.** `quality_harness/corpus.py` builds true-stem
+> mixes with no separator in the loop — Tier 1 (5 synthetic clips) and Tier 2
+> (the SFX-leak mix, a rebuild of the `fx_synth.py`/`fx_eval.py` scripts lost
+> to a wiped scratchpad). What remains of H1 is the part synthesis cannot give:
+> **recorded** stems. The licence check below is still unstarted.
 
 Add a corpus tier built from datasets whose stems are ground truth **by
 construction**, with no separator in the loop:
@@ -195,6 +266,25 @@ both the promotion gate in `LIVE_APP_PLAN.md` §3 and R4's training data
 choice. Verify rather than inherit this sentence.
 
 ### H2. Extract the metrics and corpus layer into a shared module
+
+> **Overridden 2026-10-23, with a reason — read this before acting on the
+> paragraph below.** This section said not to build a harness here. One was
+> built anyway: `quality_harness/`. The justification is that the thing H2 told
+> us to share is the thing §3 says is broken — `bench_quality.py` scores against
+> demucs output as truth, so sharing its corpus layer would have propagated the
+> circularity instead of fixing it. `quality_harness/` builds its own stems and
+> avoids that.
+>
+> **The cost H2 warned about is real and is now owed.** There are two harnesses
+> across the two repos, and their numbers are not comparable. What stays valid:
+>
+> - The **seam** described below is still the right one: streaming chain over
+>   there, offline full-file separators here, metrics and corpus loader shared.
+> - The sharing should now go the **other** direction — lift
+>   `quality_harness/metrics.py` and `corpus.py` into the shared module and have
+>   the live repo adopt them, rather than this repo adopting `bench_quality.py`.
+> - The `museval`/`mir_eval` decision below is **still unmade**, and R2 shipping
+>   without published-number comparability is the first bill for that.
 
 Do **not** rebuild `bench_quality.py` here, and do not fork it. Two divergent
 copies of a 1,600-line harness is how ground truth stops being comparable
@@ -269,7 +359,34 @@ landing between them, at real quality, changes what the live app can ship.
 Exempt from §3 — a speed screen does not depend on the reference. Quality
 ranking of these three waits for H1.
 
-### R2. MERL `cocktail-fork-separation` (MRX)
+### R2. MERL `cocktail-fork-separation` (MRX) — ✅ shipped 2026-10-23
+
+> **This item is closed, and not by the route below.** MRX is in the app, as
+> the "Fast" option of "Keep sound effects" and as a "MRX dialogue" separator
+> choice. It went in as an int8 ONNX model, so none of the costs anticipated
+> below were paid: `pytorch_lightning` was never needed, CPU feasibility is
+> settled (≈16–18 s per 10 min on 4 threads), and the weights are a 31 MB
+> download with a recorded sha256 rather than git-LFS.
+>
+> **Measured, against a ground-truth mix** (lower leak is better):
+>
+> | Model | Music leak into effects | Effects kept (SI-SDR) |
+> |---|---|---|
+> | MRX, raw | −16.4 dB | −0.3 dB |
+> | MRX + music over-subtraction (β=1, now its default) | **−21.3 dB** | −1.3 dB |
+> | CDX23, raw | **−24.9 dB** | **+3.6 dB** |
+>
+> So CDX23 leaks about 8.5 dB less and keeps effects better; MRX is the fast
+> option and still leaks audibly, which is why its UI label says "some music
+> bleed". Full method and results: `docs/LIVE_SFX_HANDOVER.md` §2.2.
+>
+> **It was adopted without H1 and without DnR**, which the text below says to
+> sequence first. That was a shipping decision made on measured leakage and the
+> user's ear — the same kind of real-measurement-over-table-verdict move R7
+> made for htdemucs, just not run through this roadmap's own process. The DnR
+> scoring it skipped is still the only thing that would tell us how good it
+> actually is against the published numbers — fold it into H1 rather than
+> treating the question as settled.
 
 The best *architectural* fit found: trained directly on DnR's Dialogue /
 Music / Effects split rather than being a repurposed 4-stem music model, and
@@ -353,37 +470,157 @@ numbers on that machine are meaningless for the target, and their value here
 is as a **quality reference point** for H1's true-stem tier — a better ceiling
 than demucs — rather than as shippable candidates.
 
+### R7. htdemucs, reinstated — re-measure and A/B by ear ⭐ new 2026-09-08
+
+Added after a crash report from a v0.4.4 release build turned out to be an app
+bug with much wider consequences than the crash.
+
+`separate_with_demucs` passed `segment=CHUNK_SEC` (60) to `apply_model`.
+`CHUNK_SEC` is the app's *outer* chunk — a bound on the numpy array in RAM.
+demucs's `segment` is the model's *internal context window*. htdemucs is a
+transformer with a fixed 7.8 s `training_length`, so a 60 s segment made
+`apply_model` pad the input to 60 s and `forward` reshape it back to 7.8 s.
+
+Measured same-machine A/B on one 60 s chunk (4 threads, 32-core box):
+
+| | `segment=60` (shipped) | fixed |
+|---|---|---|
+| result | RuntimeError | OK |
+| peak RSS | 14,929 MB | **1,237 MB** |
+| wall time | 28.3 s, then crashed | **10.5 s** (RTF 0.177) |
+
+**Consequences beyond the crash.** Attention is quadratic in context length, so
+this is also the whole of the ">6–7 GB, still climbing, OOM-killed" figure that
+got Demucs written off. The `~1.2 GB` estimate that the benchmark doc dismissed
+as "5-6× too low" was right. htdemucs is practical on the 4-core box, and at RTF
+0.177 it is ~2.5× faster than MDX-Net Voc_FT, the app's current default.
+
+What remains, in order:
+
+1. **Re-measure on the 4-core box** per §1.4 — the RTF above does not belong in
+   the comparison table until it is measured there. Cheapest high-value
+   benchmark currently available.
+2. **A/B htdemucs against Voc_FT by ear** on this project's own content. The
+   quality numbers taken so far (−60.2 dB suppression, −0.02 dB retention) are
+   against demucs-derived ground truth and therefore circular — see §3. This
+   is the listening test that decides whether the app's default engine changes.
+3. **Re-test `htdemucs_ft`**, whose only recorded reason for never being tried
+   was the OOM that turned out to be this bug.
+
+A methodological note worth keeping: the benchmark doc had already written down
+the decisive fact — that the old estimate "appears to have never been measured
+against this exact `apply_model` call shape (`segment=60, overlap=0.25`)" — and
+read it as the estimate being wrong rather than the call shape. The evidence was
+present and the inference went the wrong way.
+
+> **Update 2026-10-18 — item 3 has a first number, not the measurement asked
+> for.** A user ran `htdemucs_ft` in the packaged v0.4.4 app (INT8, CPU) and it
+> completed: **VmHWM 3.15 GB**, against the 4-model ensemble's expected ~4×
+> plain htdemucs (1.24 GB × 4 ≈ 5 GB — it came in under that, likely from
+> staggered sub-model peaks). That is a real data point and it closes the
+> "never tried, too risky" question. **It does not satisfy item 1**: the run
+> was on the user's desktop with the job log showing 160 threads, not the
+> 4-core reference box, so it still cannot enter the comparison table as a
+> ranked row. Items 1 and 2 are both still open.
+
 ---
 
 ## 6. Sequenced plan
 
-**Track 1 — this week, no new infrastructure**
+> **Rewritten 2026-10-24.** The 2026-09-08 sequence (immediately below the
+> line) assumed R7.1–R7.3 and R2 would run through this roadmap's own process.
+> Instead R2 shipped directly and R7.3 got a first, unranked number (§6 note
+> above); everything else on that list is exactly as open as it was.
 
-1. **R1** — benchmark `2_HP-UVR`, `Inst_HQ_4`, `kuielab_a` for speed and RAM
-   on the 4-core box. Zero setup; `audio-separator` is installed.
-2. **R3** — the sherpa Spleeter int8 listening session. Unblocks a decision
-   that has been open since July.
+**Done, partially or fully, outside this sequence**
 
-**Track 2 — the enabler, ~3–5 days**
+- **R2** — MRX and CDX23 shipped. Not scored on DnR; still owed (see R2).
+- **R7.3** — `htdemucs_ft` confirmed working at 3.15 GB, not yet on the
+  4-core box.
+- **H1, synthetic half** — `quality_harness/` Tier 1 and Tier 2.
+- Not on the 2026-09-08 plan at all: the fast engine, the keep-effects
+  pipeline, crash logging, packaging fixes.
 
-3. **H1** — true-stem corpus tier (MUSDB18-HQ + DnR), licences verified first.
-4. **H2** — extract shared metrics + corpus module; add this repo's offline
-   separator driver.
-5. **H3** — emit `model_card.json` from benchmark runs (folded into H2).
+**Next, in order**
 
-**Track 3 — after Track 2**
+1. **Release what is already built.** PR #6 (the fast engine + keep-effects
+   branch) is the largest body of unreleased work this repo has held, and the
+   published v0.4.4 assets still carry the htdemucs crash R7 exists because of.
+   Also re-land PR #4's content on `main` properly (§0) — it is a doc-only fix
+   and should not wait on anything else. Run the Windows CI (unrun since the
+   OpenVINO and model changes, and it now fails the build if the engine is not
+   on OpenVINO), rebuild Linux, merge, tag. **Decide v0.4.4-in-place vs v0.4.5
+   first** — the bundle went 640 MB → 890 MB and gained a user-facing feature,
+   and identical version strings already caused `apt` to refuse an upgrade
+   once.
+2. **R7.1 + R1** — unchanged from the 2026-09-08 plan below: both are 4-core
+   speed/RAM screens, cheap, and still unrun. Worth running alongside the new
+   A2 audits (next item), same machine, same sitting.
+3. **Use the harness on the questions it was built for** — the A2 audits:
+   the −40 dB pre-gate suspected of crossover distortion, the Normal-mode
+   10 kHz low-pass, whether DeepFilterNet and the VAD gate earn their cost,
+   and overlap 0.25 vs 0.1. All four are wired and unrun.
+4. **R7.2 + R3** — the listening session, as planned: htdemucs vs Voc_FT (now
+   also vs the fast engine, which didn't exist when this was written), and
+   sherpa Spleeter int8.
+5. **H1, recorded half** — MUSDB18-HQ and DnR, licences checked first. This is
+   what turns §3 from "partly addressed" into closed, and what would finally
+   score MRX, CDX23 and htdemucs against published numbers and each other.
+6. **H2 / H3** — shared metrics module (now sharing *outward*, see H2) and
+   `model_card.json`. The promotion contract has still never been exercised.
 
-6. **R2** — MRX, screened on the big machine, scored on DnR.
-7. **R6** — Roformer/`htdemucs_ft` as quality reference points.
+**Background**
 
-**Track 4 — background, starts now**
-
-8. **R4** — HS-TasNet training, running in parallel throughout.
+- **R4** — HS-TasNet training.
+- **Track C**, new since this roadmap: distil a causal "music vs everything
+  else" model with CDX23 as teacher. Plan in
+  `docs/SIMILAR_PROJECTS_RESEARCH.md` §3.4.
 
 **Deferred**
 
-9. **R5** — bleed suppressor and de-reverb post-passes, for a v0.4.5 offline
+- **R5** — bleed suppressor and de-reverb post-passes.
+- **R6, Roformer** — still unscreened (htdemucs_ft half answered, §6 note).
+
+---
+
+<details>
+<summary>The 2026-09-08 sequence, superseded above</summary>
+
+**Track 1 — this week, no new infrastructure**
+
+1. **R7.1** — re-measure fixed htdemucs on the 4-core box. Smallest job on
+   this list and it corrects a headline row in the comparison table.
+2. **R1** — benchmark `2_HP-UVR`, `Inst_HQ_4`, `kuielab_a` for speed and RAM
+   on the 4-core box. Zero setup; `audio-separator` is installed. Run it in the
+   same sitting as R7.1 — same harness, same machine, comparable rows.
+3. **R7.2 + R3** — one listening session covering both open ear tests:
+   htdemucs vs Voc_FT, and sherpa Spleeter int8. Between them they decide the
+   app's default engine and a latency-budget question open since July.
+
+**Track 2 — the enabler, ~3–5 days**
+
+4. **H1** — true-stem corpus tier (MUSDB18-HQ + DnR), licences verified first.
+   R7.2 raises the priority of this: htdemucs now needs an unbiased score, and
+   demucs-derived ground truth cannot give it one.
+5. **H2** — extract shared metrics + corpus module; add this repo's offline
+   separator driver.
+6. **H3** — emit `model_card.json` from benchmark runs (folded into H2).
+
+**Track 3 — after Track 2**
+
+7. **R2** — MRX, screened on the big machine, scored on DnR.
+8. **R6** — Roformer/`htdemucs_ft` (now also R7.3) as quality reference points.
+
+**Track 4 — background, starts now**
+
+9. **R4** — HS-TasNet training, running in parallel throughout.
+
+**Deferred**
+
+10. **R5** — bleed suppressor and de-reverb post-passes, for a v0.4.5 offline
    quality pass.
+
+</details>
 
 ---
 
@@ -444,10 +681,12 @@ here:
 
 From this repo's own record:
 
-- **Demucs `htdemucs` cannot be memory-bounded by shortening its segment** —
-  the transformer's `training_length` (~7.8 s) is fixed and requesting less
-  throws a reshape error. Peak was >6–7 GB and still climbing on the 4-core
-  box. This is what R6 revisits on different hardware, not a solved problem.
+- ~~**Demucs `htdemucs` cannot be memory-bounded by shortening its
+  segment.**~~ **Disproven 2026-09-08 — this entry was wrong and is kept only
+  so it is not re-derived.** The reshape error was real, but its cause was the
+  app passing `segment=CHUNK_SEC` (60), forcing a context *far above* the
+  model's native 7.8 s rather than below it. Removing the kwarg: peak RSS
+  14,929 MB → 1,237 MB, crash → success, RTF 0.177. See R7.
 - **`dpdfnet8`** is bandwidth-capped at 8 kHz *and* slower than
   `dpdfnet2_48khz_hr`. Dominated on every axis.
 
