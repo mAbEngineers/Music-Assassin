@@ -1,6 +1,6 @@
 # Handover — Music-Assassin (offline app + research lab)
 
-**Updated 2026-10-23.** Covers the fast-engine and "keep sound effects" work, the packaging changes, and what comes next.
+**Updated 2026-10-27.** Covers the fast-engine and "keep sound effects" work, the packaging changes, the v0.4.5 release, and what comes next.
 
 Related handovers:
 - **Live app, sound effects:** `docs/LIVE_SFX_HANDOVER.md`. A copy also sits in `music-assassin-live/docs/`.
@@ -12,10 +12,11 @@ Related handovers:
 
 | | |
 |---|---|
-| **Branch** | `feat/fast-engine-keep-effects`, pushed to origin. **Not merged.** Merging is the user's call. PRs #2–#5 are also unmerged. |
-| **Ahead of `main` (`e9327e3`)** | Earlier fixes already on the branch: `9d44d4e`, `e050183`/`34f1330`, `1aa2829` (htdemucs segment fix, packaging defects, crash logging). This round: `71a12d1` (fast engine + keep sound effects), `01f7d58` (packaging), `dc05589` (live SFX handover; `dialog.md` gitignored), `85059cd` (quality harness A1), and the commit holding this file plus the doc updates. |
-| **Concurrency** | Several Claude sessions edit this gvfs-mounted tree at once. Stage only the exact paths you mean to commit (never `git add -A`), and push promptly: this disk is the only other copy. |
-| **Live repo** | `music-assassin-live` has another session's uncommitted work. I added only `docs/LIVE_SFX_HANDOVER.md` there, also uncommitted. |
+| **Branch** | `main`. The fast-engine / keep-effects work is **merged and shipped** as **v0.4.5** (PR #8, merge commit `41149c3`; the v0.4.5 tag points at it). `main` is clean and had not moved since July before this; it has now. |
+| **Release** | **v0.4.5 is published** (not a draft), target `main`, 3 assets: Linux portable (~1.09 GB), `.deb` (~1.09 GB), Windows `.exe` (~589 MB). Windows CI is green on the OpenVINO + model changes. README download links point at `releases/download/v0.4.5`. |
+| **App file** | The live GUI is now `MusicAssassinGUI_v0.4.5.py` (root + byte-identical `versions/` copy). v0.4.4 and earlier remain in `versions/`. |
+| **Concurrency** | Several Claude sessions edit this gvfs-mounted tree at once. Stage only the exact paths you mean to commit (never `git add -A`), and push promptly: this disk is the only other copy. README and CHANGELOG are owned by another session — don't re-apply edits there. |
+| **Live repo** | `music-assassin-live` has another session's uncommitted work. The offline side added only `docs/LIVE_SFX_HANDOVER.md` there. |
 
 ---
 
@@ -33,7 +34,7 @@ Runs UVR-MDX-NET-Voc_FT on **OpenVINO**: BF16 compute where the CPU supports it 
   - `clean_effects()`: music over-subtraction.
   - Model download with size and sha256 checks.
 
-### 2.2 App changes — `MusicAssassinGUI_v0.4.4.py`
+### 2.2 App changes — `MusicAssassinGUI_v0.4.5.py`
 
 - **Separator choices:** "Voc_FT · fast engine (Best)" is the default; also "… low overlap (Faster)" and "MRX dialogue (Fastest · lower quality)". The old audio-separator, Demucs and Spleeter entries remain.
 - **Keep sound effects:** Off / Fast (MRX) / Quality (CDX23).
@@ -43,17 +44,18 @@ Runs UVR-MDX-NET-Voc_FT on **OpenVINO**: BF16 compute where the CPU supports it 
 - **Silero VAD preloads in a background thread** (`preload_silero_vad()`). Its first `torch.hub` load cost 9–22 s.
 - **Per-stage `[time]` lines** in the log, and a fast-engine/OpenVINO line at startup.
 
-### 2.3 Packaging — `build/MusicAssassin_v0.4.4.spec`, `build/runtime_hook_v0.4.4.py`, CI
+### 2.3 Packaging — `build/MusicAssassin_v0.4.5.spec`, `build/runtime_hook_v0.4.5.py`, CI
 
-- **The spec builds from `versions/MusicAssassinGUI_v0.4.4.py`, not the root file.** It had been stale; it's now synced. **Keep the two copies identical.**
+- **The spec builds from `versions/MusicAssassinGUI_v0.4.5.py`, not the root file.** It had been stale; it's now synced. **Keep the two copies identical.**
 - **OpenVINO is collected by hand** (PyInstaller has no hook for it). `libs/` is kept together because libopenvino finds its plugins next to itself. The GPU/NPU plugins, GPU `cache.json` and the non-ONNX frontends (~75 MB) are dropped.
 - **Voc_FT, MRX and CDX23 (151 MB) are bundled** from the build machine's `~/.cache/music-assassin/models`. The runtime hook sets `MA_BUNDLED_MODEL_DIR`.
   - **Warm the cache before building:** `python -c "import fast_separation as f; [f.model_path(k) for k in f._MODELS]"`
-- **Windows CI** now installs openvino and pyloudnorm, warms the models, and **fails if the engine isn't on OpenVINO**. The engine's fallback to onnxruntime is silent. **Not run yet.**
+- **Windows CI** installs openvino and pyloudnorm, warms the models, and **fails if the engine isn't on OpenVINO**. The engine's fallback to onnxruntime is silent. **Green for v0.4.5** after a fix: the "Verify the fast engine runs on OpenVINO" step uses `shell: python`, which runs a temp script whose own directory (not the repo root) is on `sys.path`, so `import fast_separation` failed; fixed by setting `env: PYTHONPATH: ${{ github.workspace }}` on that step.
 - **Verified on Linux:**
-  - **Size:** the build is 890 MB (was 640 MB; the limit is 2 GB).
+  - **Size:** the shipped bundle is ~1.09 GB (the earlier 890 MB figure was before the final model/OpenVINO set; the limit is 2 GB). See §7 Speed for the shrink investigation.
   - **Startup:** the built app logs `Fast engine: True (openvino)`.
   - **Engine in a bundle:** a test bundle with the same rules ran all three models from the bundled folder, on OpenVINO BF16, matching the un-frozen run at >129 dB SI-SDR.
+- **Build off the mount.** PyInstaller's PKG assembly hits `OSError: [Errno 95] Operation not supported` writing to the gvfs/sftp mount. `build/build.sh` honours `BUILD_OUT` for the output dir: `BUILD_OUT=$HOME/ma_build VENV_PATH=~/.venvs/music-assassin bash build/build.sh 0.4.5`.
 
 ### 2.4 Docs
 
@@ -100,13 +102,15 @@ Runs UVR-MDX-NET-Voc_FT on **OpenVINO**: BF16 compute where the CPU supports it 
   | `MA_MODEL_DIR` | Model download cache location |
   | `MA_BUNDLED_MODEL_DIR` | Read-only bundled models (set by the runtime hook) |
 
-- **Build:** `build/build.sh 0.4.4` writes to `build/output_v0.4.4/`. Warm the model cache first.
+- **Build:** `BUILD_OUT=$HOME/ma_build VENV_PATH=~/.venvs/music-assassin bash build/build.sh 0.4.5` writes to `$HOME/ma_build/output_v0.4.5/`. Warm the model cache first. `BUILD_OUT` is required on this mount (Errno 95 otherwise — see §5).
 
 ---
 
 ## 5. Gotchas that cost time this round
 
-- **`git commit -F -` fails on this gvfs/sftp mount** ("could not read commit message"). On 2026-10-24, `-F <file>` with a file under `/tmp` failed the same way, even though the file existed. What works: `git commit -m "$(cat <file>)"`.
+- **`git commit -F -` fails on this gvfs/sftp mount** ("could not read commit message"). On 2026-10-24, `-F <file>` with a file under `/tmp` failed the same way, even though the file existed. What works: `git commit -m "$(cat <file>)"`; if even `-m` trips the COMMIT_EDITMSG read, fall back to `git commit-tree` plumbing (write a tree, commit-tree with `-p HEAD`, then `git update-ref HEAD <sha>`).
+- **PyInstaller cannot package onto this mount — `OSError: [Errno 95] Operation not supported`** during PKG assembly. Build to local disk with `BUILD_OUT=$HOME/ma_build` (see §2.3 / §4).
+- **The build venv needs `numpy==2.4.6`.** `numpy 1.26.4` is too old for current audio-separator/scipy (they need ≥2). This is the version Windows CI pins. Torch must be the `+cpu` wheels; `audioread` is a real dep (both were already correct in the working venv — don't assume they're missing from a failing build).
 - **`git push` can hang on this mount.** One timed out at 5 min; the retry took 21 s. Wrap it in `timeout` and retry.
 - **The repo path contains a colon** (`sftp:host=…`), so `PYTHONPATH=<repo>` silently splits it. Add the path with `sys.path.insert` instead.
 - **Session scratch space under `/tmp` is wiped on reboot.** One reboot lost the listening files and the effects test scripts. Keep anything worth keeping in `test_outputs/` (git-ignored).
@@ -121,36 +125,64 @@ Runs UVR-MDX-NET-Voc_FT on **OpenVINO**: BF16 compute where the CPU supports it 
 2. **Suspected distortion from the −40 dB per-sample pre-gate** in `audio_prefilter`. It zeroes every sample with |x| < 0.01, which includes every zero-crossing, so I expect crossover distortion on quiet speech. **Not yet measured.** The effects path already skips it (`gate=False`).
 3. **Normal mode applies a 10 kHz low-pass.** The live repo found vocal damage concentrated in the top octave; worth measuring here.
 4. **MRX effects leak audible music** (−21 dB after cleanup). The UI label says "some music bleed".
-5. **Windows CI is unrun** since the OpenVINO and model changes.
+5. **Bundle is ~1.09 GB**, above the ~890 MB we'd hoped for. Not a blocker; the shrink is a Speed/size task in §7.
 6. **Leftover from the old pipeline:** `separate_with_audio_separator` is still there with its per-chunk peak scaling. It only runs if a user picks the old "MDX-Net" entries.
 
 ---
 
-## 7. Next steps (agreed direction, 2026-10-23)
+## 7. Next steps (v0.4.5 is shipped; agreed direction, 2026-10-27)
 
-**Track A: offline app (this repo).** Recommended order:
+The shipping blocker is cleared — v0.4.5 is out. The offline roadmap (Track A)
+below is grouped by the axis each item moves: **quality**, **speed**, or
+**user-friendliness**. A1 (the quality harness) is the tool the quality and
+speed audits run through; it's already committed (`85059cd`, `quality_harness/`,
+`--audit a2` / `--audit a4`). The audits need a Python env with
+onnxruntime/OpenVINO and the Voc_FT model — on an OpenVINO box, not this one.
 
-| # | Item | Status |
+### Quality (how clean the output is)
+
+| # | Item | Status / note |
 |---|---|---|
-| A1 | Quality harness: ground-truth corpus, scored metrics, before/after reports | **Committed** (`85059cd`, `quality_harness/`). Includes a rebuild of the lost effects-leak test as "Tier 2". The audits need a Python environment with onnxruntime/OpenVINO and the Voc_FT model; see `quality_harness/README.md`. |
-| A2 | Audits with A1: pre-gate (§6.2), Normal-mode low-pass (§6.3), whether DeepFilter and the VAD gate help, overlap 0.25 vs 0.1 | Wired into the harness as `--audit a2` |
-| A3 | Stereo output (§6.1) | Not started. Watch DeepFilterNet's cost, which doubles per channel and may push Best just past 60 s. |
-| A4 | "Music level" control: add removed music back at −20 / −12 dB instead of deleting it | Harness has `--audit a4` |
-| A5 | Remember settings between sessions; a 20 s preview / A-B before export | Not started |
-| A6 | Release: run Windows CI, Linux build, merge, tag | Not started. **Merge and push need the user's go-ahead.** |
+| A3 | **Stereo output** (§6.1). The single biggest listener-visible win — every processed video is mono today, and Voc_FT/CDX23 are stereo models being fed duplicated mono. | Not started. Watch DeepFilterNet's cost (doubles per channel — a speed catch, see below). |
+| A2-q | **Audit the quality-shaping stages:** the −40 dB pre-gate (§6.2, suspected crossover distortion on quiet speech), the Normal-mode 10 kHz low-pass (§6.3, top-octave vocal damage the live repo saw), and whether DeepFilterNet and the VAD gate actually help or just cost time. | Wired as `--audit a2`; run and read the before/after table before touching defaults. |
+| A4 | **"Music level" control** — add the removed music back at −20 / −12 dB instead of deleting it. A gentle mixback hides separation artefacts and sounds more natural than a hard cut. | Harness has `--audit a4` to find the level. UI is the user-friendliness half (A4-ui). |
 
-**Track B: live app (`music-assassin-live`).**
-- **B1: report latency to players** (PipeWire monitor-port problem). This unlocks lip-sync and a "movie mode".
-- **B2: movie mode** with a real separator.
+### Speed (how fast, how big)
+
+| # | Item | Status / note |
+|---|---|---|
+| A2-s | **Overlap 0.25 vs 0.1.** 0.1 is faster; measure whether it costs quality. If not, it's a free speed default. | `--audit a2` covers it. |
+| — | **Shrink the bundle** (~1.09 GB → target ~890 MB; §6.5). Audit what PyInstaller is pulling in — spare OpenVINO frontends/plugins, duplicate torch/cuda libs, unused model copies. Size, not runtime speed, but it's the download cost. | Not started. |
+| — | **Stereo's speed catch:** DeepFilterNet runs per channel, so stereo roughly doubles its ~12 s and can push "Best" past the 60 s budget for a 10-min clip. Decide: per-channel, or mono-side DeepFilter + stereo re-inject. | Tied to A3. |
+
+### User-friendliness (how pleasant to use)
+
+| # | Item | Status / note |
+|---|---|---|
+| A4-ui | **Expose the music-level control in the UI** once A4 finds the levels — a simple "remove / turn down a little / turn down a lot" choice. | Follows A4. |
+| A5 | **Remember settings between sessions**, and a **20 s preview / A-B before committing a full export** — so a user isn't waiting a minute to find out a setting was wrong. | Not started. |
+
+### Track B: live app (`music-assassin-live`)
+
+- **B1: report latency to players** (PipeWire monitor-port problem). Unlocks lip-sync.
 - **B3: music-presence gate.**
-- **B4: consolidate the docs**, whose ROADMAP and HANDOVER are now 2,000+ lines.
+- **B4: consolidate the docs** (ROADMAP + HANDOVER are now 2,000+ lines).
+- **B2 (movie mode) is dropped** — the user rejected the 0.5–1.5 s delay. Live music removal now rides entirely on Track C.
 
-Details are in `docs/LIVE_SFX_HANDOVER.md` §4 and `docs/SIMILAR_PROJECTS_RESEARCH.md` §4.
+Details: `docs/LIVE_SFX_HANDOVER.md` §4 and `docs/SIMILAR_PROJECTS_RESEARCH.md` §4.
 
-**Track C: research.** Distil a small causal "music vs everything else" model, with CDX23 as teacher. Plan in `docs/SIMILAR_PROJECTS_RESEARCH.md` §3.4.
+### Track C: research (now the only route to live music removal)
 
-### Decisions waiting on the user
+Distil a small **causal** "music vs everything else" model, CDX23 as teacher.
+Elevated from a side-quest to the critical path for the live app, since movie
+mode is off the table. Plan in `docs/SIMILAR_PROJECTS_RESEARCH.md` §3.4.
 
-1. **Focus:** offline first, live first, or both in parallel.
-2. **Live movie mode:** is a 0.5–1.5 s delay acceptable once video players are told about it? (Live ROADMAP Q3.)
-3. **Merge** `feat/fast-engine-keep-effects` and PRs #2–#5, and whether the next release is v0.4.5.
+### Decisions already made (for the record)
+
+- **Focus:** both offline and live, in parallel.
+- **Live movie mode:** rejected — the 0.5–1.5 s delay is not acceptable; Track C is the live path instead.
+- **Release:** v0.4.5, full version bump, merged and shipped (PR #8).
+
+### Still open
+
+- Which axis to pick up first — quality (A3 stereo is the headline), speed, or user-friendliness. The user framed the next round around these three; no ordering has been chosen yet.
