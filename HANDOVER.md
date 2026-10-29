@@ -55,6 +55,14 @@ Runs UVR-MDX-NET-Voc_FT on **OpenVINO**: BF16 compute where the CPU supports it 
   - **Size:** the shipped bundle is ~1.09 GB (the earlier 890 MB figure was before the final model/OpenVINO set; the limit is 2 GB). See §7 Speed for the shrink investigation.
   - **Startup:** the built app logs `Fast engine: True (openvino)`.
   - **Engine in a bundle:** a test bundle with the same rules ran all three models from the bundled folder, on OpenVINO BF16, matching the un-frozen run at >129 dB SI-SDR.
+- **App icon (2026-10-30, after v0.4.5).** A dark ink treble clef on an ivory plate, cut once by a thin red line. The piece above the cut lifts away and fades, so the slice still shows at 32 px. The user chose it after several rounds, rejecting a target/scope, blood, two cuts and the live app's waveform as too busy or not distinct enough.
+  - It deliberately differs from the live app's indigo waveform icon. The taskbar fix below is copied from the live repo's `docs/ICON_HANDOVER.md`.
+  - `build/draw_icon.py` (Pillow) regenerates `build/icon.png`, `build/icon.ico` and `assets/icon*.png`. It needs the Noto Music font (SIL OFL) for the clef glyph; pass `--font` if it isn't in a standard path. The generated files are committed, so builds don't need the font.
+    - `build/icon.png` is the 1024 px master; build.sh renders the `.deb`'s hicolor sizes from it.
+    - `build/icon.ico` is the Windows exe icon; the spec sets it with `icon=`.
+    - `assets/icon*.png` are the Tk window icons; the spec bundles them.
+  - **Taskbar fix:** the app creates its window as `Tk(className=WM_CLASS)` with `WM_CLASS = "music-assassin"`. The `.desktop` file has a matching `StartupWMClass=music-assassin`. Both must stay identical, or GNOME shows a generic taskbar icon.
+  - Checked with xprop on a real Tk window: `WM_CLASS = "music-assassin", "Music-assassin"`, with four `_NET_WM_ICON` sizes. Not yet checked in an installed `.deb` or the Windows exe.
 - **Build off the mount.** PyInstaller's PKG assembly hits `OSError: [Errno 95] Operation not supported` writing to the gvfs/sftp mount. `build/build.sh` honours `BUILD_OUT` for the output dir: `BUILD_OUT=$HOME/ma_build VENV_PATH=~/.venvs/music-assassin bash build/build.sh 0.4.5`.
 
 ### 2.4 Docs

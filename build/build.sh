@@ -290,8 +290,10 @@ if command -v dpkg-deb &> /dev/null; then
     mkdir -p "$DEB_APPS_DIR"
 
     # Use a repo icon when one exists, otherwise fall back to a stock theme
-    # icon name so the entry still renders. Drop a PNG at build/icon.png and
-    # it gets picked up automatically -- no change needed here.
+    # icon name so the entry still renders. build/icon.png is the 1024 px
+    # master from build/draw_icon.py and is picked up automatically.
+    # StartupWMClass below must equal WM_CLASS in the app, or the taskbar
+    # shows a generic icon.
     ICON_SRC="$(dirname "$0")/icon.png"
     ICON_NAME="audio-x-generic"
     if [ -f "$ICON_SRC" ]; then
@@ -327,6 +329,7 @@ Comment=Remove background music from audio and video files (offline, CPU)
 Exec=/usr/bin/music-assassin
 Icon=${ICON_NAME}
 Terminal=false
+StartupWMClass=music-assassin
 Categories=AudioVideo;Audio;AudioVideoEditing;
 Keywords=vocals;separation;demucs;music;removal;karaoke;
 StartupNotify=true

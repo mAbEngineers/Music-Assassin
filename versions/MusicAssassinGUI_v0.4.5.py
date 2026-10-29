@@ -36,7 +36,7 @@ import os, sys, gc, time, logging, math, threading
 os.environ.setdefault("TCL_LIBRARY", "/usr/share/tcltk/tcl8.6")
 os.environ.setdefault("TK_LIBRARY", "/usr/share/tcltk/tk8.6")
 
-from tkinter import filedialog, messagebox, Label, Frame, Scrollbar, Listbox, Button, Tk, Entry, Checkbutton, BooleanVar
+from tkinter import filedialog, messagebox, Label, Frame, Scrollbar, Listbox, Button, Tk, Entry, Checkbutton, BooleanVar, PhotoImage
 from tkinter.scrolledtext import ScrolledText
 from tkinter.ttk import Progressbar, Combobox, Style
 from scipy.signal import butter, sosfilt
@@ -2496,12 +2496,38 @@ def on_closing():
         if process2: process2.kill()
         root.destroy()
 
+# The window class must equal StartupWMClass in the .deb's .desktop file
+# (build/build.sh), or GNOME/XWayland can't match the window to its entry and
+# the taskbar shows a generic icon instead of ours.
+WM_CLASS = "music-assassin"
+
+
+def set_window_icon(root):
+    """Window icon from assets/icon*.png (made by build/draw_icon.py). Found
+    in the PyInstaller bundle, next to this file, or one level up when run
+    from versions/. Missing icons are not an error."""
+    for base in (getattr(sys, "_MEIPASS", None),
+                 os.path.dirname(os.path.abspath(__file__)),
+                 os.path.dirname(os.path.dirname(os.path.abspath(__file__)))):
+        if not base:
+            continue
+        paths = [os.path.join(base, "assets", n)
+                 for n in ("icon.png", "icon_64.png", "icon_48.png", "icon_32.png")]
+        if all(os.path.isfile(p) for p in paths):
+            try:
+                root._icons = [PhotoImage(file=p) for p in paths]  # keep refs alive
+                root.iconphoto(True, *root._icons)
+            except Exception as e:
+                print(f"Window icon not set: {e}")
+            return
+
+
 # ============================================================================
 # MAIN
 # ============================================================================
 
 if __name__ == "__main__":
-    root = Tk()
+    root = Tk(className=WM_CLASS)
     root.wm_title("Music Assassin Pro v0.4.5")
     root.geometry("720x660")
     root.configure(background='#0d0d14')
@@ -2513,12 +2539,13 @@ if __name__ == "__main__":
         os.environ['TCL_LIBRARY'] = '/usr/share/tcltk/tcl8.6'
         os.environ['TK_LIBRARY'] = '/usr/share/tcltk/tk8.6'
         root.destroy()
-        root = Tk()
+        root = Tk(className=WM_CLASS)
         root.wm_title("Music Assassin Pro v0.4.5")
         root.geometry("720x660")
         root.configure(background='#0d0d14')
         root.minsize(640, 560)
 
+    set_window_icon(root)
     setFrames(root)
 
     root.protocol("WM_DELETE_WINDOW", on_closing)

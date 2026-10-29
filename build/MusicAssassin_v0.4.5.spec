@@ -187,6 +187,9 @@ a = Analysis(
         *_hf_hub_data,
         *_local_models,
         *_df_cache,
+        # Tk window icons (build/draw_icon.py); found via sys._MEIPASS/assets
+        *[(os.path.join(_repo_root, 'assets', n), 'assets')
+          for n in ('icon.png', 'icon_64.png', 'icon_48.png', 'icon_32.png')],
         *([('/usr/share/tcltk/tcl8.6', 'tcl86'),
            ('/usr/share/tcltk/tk8.6',  'tk86')]
           if sys.platform == 'linux' else []),
@@ -293,5 +296,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,
+    icon=os.path.join(_repo_root, 'build', 'icon.ico'),  # Windows; ignored on Linux
 )
