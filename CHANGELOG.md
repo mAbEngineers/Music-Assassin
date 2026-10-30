@@ -45,7 +45,7 @@ source-separation models, and is the actively developed line today.
   - FIX the window showed MDX-Net while the app actually ran DEMUCS at startup.
   - FIX the one-time Silero VAD load (9–22 s) now happens in the background.
   - Packaged builds bundle the fast-engine models (Voc_FT, MRX, CDX23) and OpenVINO. **This is the version published as the current GitHub release.**
-  - *Since the release (on `main`, not yet in a build):* + New app icon, a sliced treble clef, now also shown in the window, the Linux taskbar and on the Windows `.exe`. Packaging excludes unused GPU code (`triton`, torch test binaries), about 270 MB smaller.
+  - *Since the release (on `main`, not yet in a build):* + New app icon, a sliced treble clef, now also shown in the window, the Linux taskbar and on the Windows `.exe`. Packaging excludes unused GPU code (`triton`, torch test binaries), about 270 MB smaller. The −40 dB pre-gate is off: it did nothing at normal levels and badly distorted dialogue in quiet files (A2 audit, `docs/A2_AUDIT_RESULTS.md`).
 
 ## Era 8 — CPU-Optimized Streaming Rewrite, parked experiment (v0.5.0 – v0.5.1)
 A separate architectural branch, not a continuation of v0.4.x — see the

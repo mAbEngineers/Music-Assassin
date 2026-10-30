@@ -311,6 +311,115 @@ def build_sfx_leak_mix(
     )
 
 
+# --------------------------------------------------------------------------
+# Tier 3: real dialogue over a real music bed.
+# --------------------------------------------------------------------------
+
+def extract_instrumental_bed(
+    song: np.ndarray, vocals: np.ndarray, sr: int = SR, min_run_s: float = 1.0,
+    vocal_floor_db: float = -25.0,
+) -> np.ndarray:
+    """Instrumental-only stretches of a real song.
+
+    `vocals` is a separated vocal stem of `song` (time-aligned). Where it is
+    more than `vocal_floor_db` below the song itself (and the song is not
+    silent), only instruments are playing, so those stretches are a clean
+    music bed. Runs shorter than `min_run_s` are dropped; the rest are joined
+    with 20 ms crossfades.
+    """
+    n = min(song.size, vocals.size)
+    song, vocals = song[:n].astype(np.float64), vocals[:n].astype(np.float64)
+    hop = int(0.05 * sr)
+    frames = n // hop
+    v_db = 10 * np.log10(np.array([np.mean(vocals[i * hop:(i + 1) * hop] ** 2)
+                                   for i in range(frames)]) + 1e-12)
+    s_db = 10 * np.log10(np.array([np.mean(song[i * hop:(i + 1) * hop] ** 2)
+                                   for i in range(frames)]) + 1e-12)
+    quiet = (v_db < s_db + vocal_floor_db) & (s_db > s_db.max() - 35.0)
+    runs, start = [], None
+    for i, q in enumerate(np.append(quiet, False)):
+        if q and start is None:
+            start = i
+        elif not q and start is not None:
+            if (i - start) * hop >= min_run_s * sr:
+                runs.append(song[start * hop:i * hop])
+            start = None
+    if not runs:
+        raise ValueError("no instrumental-only stretch found")
+    xf = int(0.02 * sr)
+    ramp = np.linspace(0.0, 1.0, xf)
+    bed = runs[0]
+    for r in runs[1:]:
+        bed = np.concatenate([bed[:-xf], bed[-xf:] * (1 - ramp) + r[:xf] * ramp, r[xf:]])
+    return bed.astype(np.float32)
+
+
+def _rms(x: np.ndarray) -> float:
+    return float(np.sqrt(np.mean(x.astype(np.float64) ** 2) + 1e-20))
+
+
+def build_real_dialogue_mix(
+    speech: np.ndarray, bed: np.ndarray, name: str, sr: int = SR,
+    duration_s: float = 40.0, music_rel_db: float = -8.0, phrase_s: float = 6.0,
+    gap_s: float = 2.0,
+) -> Clip:
+    """Real speech over a real music bed, with music-only gaps.
+
+    The speech is cut into `phrase_s` phrases separated by `gap_s` of music
+    alone (so suppression is measurable). The bed loops to fill the clip and
+    is set `music_rel_db` relative to the speech's active level.
+    """
+    n = int(duration_s * sr)
+    out_speech = np.zeros(n, dtype=np.float64)
+    ph, gap = int(phrase_s * sr), int(gap_s * sr)
+    pos, src = gap, 0
+    while pos + ph <= n and src + ph <= speech.size:
+        piece = speech[src:src + ph].astype(np.float64)
+        fade = int(0.01 * sr)
+        piece[:fade] *= np.linspace(0, 1, fade)
+        piece[-fade:] *= np.linspace(1, 0, fade)
+        out_speech[pos:pos + ph] = piece
+        pos += ph + gap
+        src += ph
+    speech_mask = _activity_mask(out_speech, sr, thresh_db=-40.0)
+    music = np.resize(bed.astype(np.float64), n)
+    target = _rms(out_speech[speech_mask]) * _db_to_lin(music_rel_db)
+    music *= target / _rms(music)
+    total = out_speech + music
+    peak = float(np.max(np.abs(total)))
+    scale = 0.95 / peak if peak > 0.95 else 1.0
+    return Clip(
+        name=name,
+        sr=sr,
+        mix=(total * scale).astype(np.float32),
+        speech=(out_speech * scale).astype(np.float32),
+        music=(music * scale).astype(np.float32),
+        effects=np.zeros(n, dtype=np.float32),
+        speech_mask=speech_mask,
+        music_mask=np.ones(n, dtype=bool),
+        effects_mask=np.zeros(n, dtype=bool),
+    )
+
+
+def real_dialogue_set(speech_wav, songs, sr: int = SR) -> list[Clip]:
+    """Tier 3: the same real speech over each real instrumental bed, at a
+    typical level (music 8 dB under speech) and a hard one (2 dB under).
+
+    `songs` is a list of (song_wav, vocals_wav) pairs; every file must be a
+    wav (convert mp3/m4a with ffmpeg first).
+    """
+    speech = _load_wav_mono(Path(speech_wav), sr)
+    clips = []
+    for i, (song_wav, vocals_wav) in enumerate(songs, 1):
+        bed = extract_instrumental_bed(_load_wav_mono(Path(song_wav), sr),
+                                       _load_wav_mono(Path(vocals_wav), sr), sr)
+        clips += [
+            build_real_dialogue_mix(speech, bed, f"real{i}_typical", sr, music_rel_db=-8.0),
+            build_real_dialogue_mix(speech, bed, f"real{i}_loud_music", sr, music_rel_db=-2.0),
+        ]
+    return clips
+
+
 def write_clip(clip: Clip, out_dir: str | Path) -> dict[str, str]:
     """Write mix + stems to wavs for listening/inspection (needs soundfile)."""
     import soundfile as sf

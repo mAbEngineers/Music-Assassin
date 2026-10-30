@@ -285,10 +285,11 @@ def update_progress(value, total):
 # AUDIO DSP PIPELINE (Pre-Processing)
 # ============================================================================
 
-def audio_prefilter(waveform, sr=44100, gate=True):
-    """Advanced pre-filtering: gate + high-pass + normalize.
-    gate=False skips the noise gate -- the effects path needs it off, since
-    a per-sample gate wipes out quiet ambience and room tone."""
+def audio_prefilter(waveform, sr=44100, gate=False):
+    """Advanced pre-filtering: (optional gate) + high-pass + normalize.
+    The per-sample -40 dBFS gate is off by default and no caller enables it:
+    it wipes out quiet ambience, and since it runs before normalization it
+    distorts dialogue in quiet files (A2 audit, quality_harness/)."""
     update_status("Pre-filtering audio...")
     print("Pre-filtering: " + ("gate + " if gate else "") + "high-pass + normalize")
 
@@ -1789,15 +1790,18 @@ def _process_single_track(file_path, input_, track_idx, output_path, video, audi
         print(f"  [time] {name}: {now - t_stage:.1f}s")
         t_stage = now
 
-    # Keep-sound-effects input: same high-pass and normalize as the separator
-    # gets, but without the per-sample gate, which would erase ambience.
+    # High-pass + normalize, without the -40 dBFS per-sample gate. The gate
+    # runs before normalization, so it bites by file level: the A2 audit
+    # (2026-10-30) found it bought nothing at full scale but cost dialogue
+    # ~10 dB magnitude SNR on a file 24 dB down, and erased it at -30 dB.
+    # The keep-sound-effects path shares this input (the gate would erase
+    # ambience there too).
     fx_on = fx_choice != 'off' and FAST_ENGINE_AVAILABLE and fast_separation.dme_available(fx_choice)
     if fx_choice != 'off' and not fx_on:
         print(f"WARNING: keep sound effects ({fx_choice}) unavailable -- skipped")
-    fx_input = audio_prefilter(waveform, sample_rate, gate=False) if fx_on else None
+    waveform = audio_prefilter(waveform, sample_rate, gate=False)
+    fx_input = waveform if fx_on else None
     effects = None
-
-    waveform = audio_prefilter(waveform, sample_rate)
     _lap("prefilter")
 
     def _sep_progress(i, n):

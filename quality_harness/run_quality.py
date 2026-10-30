@@ -8,8 +8,13 @@ Usage
 
     python3 quality_harness/run_quality.py --separator fast_mdx --audit a2
         Run the A2 audits (pre-gate on/off, overlap 0.25 vs 0.1, Normal-mode
-        10 kHz low-pass, VAD gate on/off) with the real fast engine and emit
-        a before/after table.
+        10 kHz low-pass, VAD gate on/off, DeepFilterNet, Best) with the real
+        fast engine and emit a before/after table.
+
+    ... --real-speech speech.wav --real-song song.wav --real-vocals vox.wav
+        Add Tier 3: real speech over the instrumental-only stretches of a
+        real song (found via its separated vocal stem). --real-song and
+        --real-vocals repeat in pairs. All inputs must be wav.
 
 Every run writes a timestamped markdown report + a JSON sidecar under
 quality_harness/reports/. The markdown is the before/after artefact A1 is
@@ -56,8 +61,14 @@ def score_run(clip: corpus.Clip, res: RunResult) -> dict:
         out, mix, music_only
     )
     if speech_mask.any():
+        scores["contrast_gain_db"] = metrics.contrast_gain_db(
+            out, mix, speech_mask, music_only
+        )
         scores["dialogue_sisdr_db"] = metrics.si_sdr(
             _masked(out, speech_mask), _masked(speech, speech_mask)
+        )
+        scores["dialogue_mag_snr_db"] = metrics.magnitude_snr(
+            out, speech, speech_mask
         )
         scores["dialogue_retention_db"] = metrics.retention_db(
             out, speech, speech_mask
@@ -65,6 +76,9 @@ def score_run(clip: corpus.Clip, res: RunResult) -> dict:
     if effects_mask.any():
         scores["effects_sisdr_db"] = metrics.si_sdr(
             _masked(out, effects_mask), _masked(effects, effects_mask)
+        )
+        scores["effects_mag_snr_db"] = metrics.magnitude_snr(
+            out, effects, effects_mask
         )
         scores["effects_keep_db"] = metrics.retention_db(
             out, effects, effects_mask
@@ -96,7 +110,8 @@ def run_matrix(
             rows.append(row)
             status = "ERR" if res.error else "ok"
             print(f"  [{status}] {clip.name:22s} / {cfg.name:20s} "
-                  f"supp={row['scores'].get('music_suppression_db')}dB "
+                  f"contrast={row['scores'].get('contrast_gain_db')}dB "
+                  f"mag={row['scores'].get('dialogue_mag_snr_db')}dB "
                   f"rtf={row['scores'].get('rtf')}")
             if res.error:
                 print(f"        -> {res.error}")
@@ -112,10 +127,13 @@ def audit_a2_configs(separator: str) -> list[StageConfig]:
     base = dict(separator=separator)
     return [
         StageConfig(name="baseline", **base),
-        StageConfig(name="pregate_off", prefilter_gate=False, **base),
+        StageConfig(name="pregate_on", prefilter_gate=True, **base),
         StageConfig(name="overlap_0.10", fast_overlap=0.10, **base),
         StageConfig(name="postproc_normal", postprocess_mode="normal", **base),
+        StageConfig(name="postproc_off", postprocess=False, **base),
         StageConfig(name="vad_on", vad_gate=True, **base),
+        StageConfig(name="deepfilter_on", enhancer="deepfilter", **base),
+        StageConfig(name="best(df+vad)", enhancer="deepfilter", vad_gate=True, **base),
     ]
 
 
@@ -134,8 +152,12 @@ def a4_mixback_configs(separator: str) -> list[StageConfig]:
 # --------------------------------------------------------------------------
 
 _COLS = [
+    ("contrast_gain_db", "Contrast gain (dB)↑"),
     ("music_suppression_db", "Music supp (dB)↑"),
+    ("dialogue_retention_db", "Dialog ret. (dB)"),
+    ("dialogue_mag_snr_db", "Dialog magSNR↑"),
     ("dialogue_sisdr_db", "Dialog SI-SDR↑"),
+    ("effects_mag_snr_db", "FX magSNR↑"),
     ("effects_sisdr_db", "FX SI-SDR↑"),
     ("effects_leak_db", "FX leak (dB)↓"),
     ("musical_noise", "Mus.noise↓"),
@@ -159,7 +181,12 @@ def report_markdown(rows: list[dict], title: str) -> str:
              f"_Generated {time.strftime('%Y-%m-%d %H:%M:%S')}_", "",
              "Ground-truth stems from `quality_harness/corpus.py` "
              "(true-stem tier — scored against clean sources we own, not a "
-             "demucs reference). ↑ higher is better, ↓ lower is better.", ""]
+             "demucs reference). ↑ higher is better, ↓ lower is better.",
+             "magSNR is phase-blind and tracks audible damage; SI-SDR also "
+             "penalises the inaudible phase shift of the app's IIR filters, "
+             "so compare it only between configs with the same filters. "
+             "Contrast gain is gain-invariant; music supp and dialogue "
+             "retention move with the app's peak-normalise.", ""]
     clips = sorted({r["clip"] for r in rows})
     for clip in clips:
         lines.append(f"## {clip}")
@@ -199,7 +226,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--audit", choices=["a2", "a4"],
                     help="which audit config set to run")
     ap.add_argument("--clips", default="all",
-                    choices=["synthetic", "sfx", "all"])
+                    choices=["synthetic", "sfx", "real", "all"])
+    ap.add_argument("--real-speech", help="clean speech recording (Tier 3)")
+    ap.add_argument("--real-song", action="append", default=[],
+                    help="a song with vocals (Tier 3 music bed); repeatable")
+    ap.add_argument("--real-vocals", action="append", default=[],
+                    help="separated vocals of the matching --real-song; its "
+                    "silent stretches mark the instrumental-only bed")
     args = ap.parse_args(argv)
 
     clips = []
@@ -207,12 +240,20 @@ def main(argv: list[str] | None = None) -> int:
         clips += corpus.default_synthetic_set()
     if args.clips in ("sfx", "all"):
         clips.append(corpus.build_sfx_leak_mix())
+    if args.real_speech:
+        if not args.real_song or len(args.real_song) != len(args.real_vocals):
+            ap.error("--real-speech needs matching --real-song/--real-vocals pairs")
+        if args.clips in ("real", "all"):
+            clips += corpus.real_dialogue_set(
+                args.real_speech, list(zip(args.real_song, args.real_vocals)))
+    elif args.clips == "real":
+        ap.error("--clips real needs --real-speech, --real-song and --real-vocals")
 
     if args.self_check:
         sep = "none"
         configs = [
             StageConfig(name="dsp_baseline", separator=sep),
-            StageConfig(name="pregate_off", separator=sep, prefilter_gate=False),
+            StageConfig(name="pregate_on", separator=sep, prefilter_gate=True),
             StageConfig(name="postproc_normal", separator=sep,
                         postprocess_mode="normal"),
         ]

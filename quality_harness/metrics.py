@@ -66,6 +66,50 @@ def si_sdr(estimate: np.ndarray, reference: np.ndarray) -> float:
     return 10.0 * np.log10((target_p + _EPS) / (noise_p + _EPS))
 
 
+def magnitude_snr(
+    estimate: np.ndarray,
+    reference: np.ndarray,
+    region_mask: np.ndarray | None = None,
+    frame: int = 2048,
+    hop: int = 512,
+) -> float:
+    """Phase-blind fidelity: STFT-magnitude SNR in dB (higher = better).
+
+    SI-SDR compares waveforms, so it heavily penalises the phase shift of the
+    app's causal IIR filters (40 Hz high-pass, presence EQ, 10 kHz low-pass)
+    even though phase shift is inaudible: clean speech through the 40 Hz
+    high-pass alone scores ~8 dB SI-SDR but ~40 dB here. This compares
+    magnitude spectrograms instead, after the best overall gain, over frames
+    whose centre falls in `region_mask`. Use it to judge audible damage;
+    keep SI-SDR for separation-only comparisons.
+    """
+    est = _as_f32(estimate)
+    ref = _as_f32(reference)
+    if est.shape != ref.shape:
+        raise ValueError(f"shape mismatch: {est.shape} vs {ref.shape}")
+    if est.size < frame:
+        return float("nan")
+
+    window = np.hanning(frame).astype(np.float32)
+    starts = np.arange(0, est.size - frame + 1, hop)
+    if region_mask is not None:
+        mask = np.asarray(region_mask, dtype=bool)
+        if mask.shape != est.shape:
+            raise ValueError("region_mask must match signal shape")
+        starts = starts[mask[starts + frame // 2]]
+    if starts.size == 0:
+        return float("nan")
+
+    idx = starts[:, None] + np.arange(frame)[None, :]
+    e = np.abs(np.fft.rfft(est[idx] * window, axis=1)).astype(np.float64)
+    r = np.abs(np.fft.rfft(ref[idx] * window, axis=1)).astype(np.float64)
+    gain = float(np.sum(e * r)) / (float(np.sum(e * e)) + _EPS)
+    noise = float(np.sum((gain * e - r) ** 2))
+    if noise <= _EPS:
+        return float("inf")
+    return 10.0 * np.log10((float(np.sum(r * r)) + _EPS) / (noise + _EPS))
+
+
 def music_suppression_db(
     output: np.ndarray,
     input_mix: np.ndarray,
@@ -94,6 +138,38 @@ def music_suppression_db(
     p_in = _power(mix[mask])
     p_out = _power(out[mask])
     return 10.0 * np.log10((p_in + _EPS) / (p_out + _EPS))
+
+
+def contrast_gain_db(
+    output: np.ndarray,
+    input_mix: np.ndarray,
+    speech_mask: np.ndarray,
+    music_mask: np.ndarray,
+) -> float:
+    """Gain-invariant music removal: how much the pipeline raised the
+    dialogue-to-music ratio, in dB (higher = better).
+
+        contrast = (P_out[speech] / P_out[music-only])
+                 / (P_in[speech]  / P_in[music-only])
+
+    `music_suppression_db` compares absolute output and input power, so the
+    app's global peak-normalise (prefilter and post-process both rescale to
+    0.98) moves it: a separator that also guts the dialogue leaves a quiet
+    output that normalisation boosts, and its music "suppression" drops.
+    This ratio cancels any overall gain. It is NaN for a clip with no speech
+    or no music-only region.
+    """
+    out = _as_f32(output)
+    mix = _as_f32(input_mix)
+    s = np.asarray(speech_mask, dtype=bool)
+    m = np.asarray(music_mask, dtype=bool)
+    if not (out.shape == mix.shape == s.shape == m.shape):
+        raise ValueError("signals and masks must share shape")
+    if not (s.any() and m.any()):
+        return float("nan")
+    ratio_out = (_power(out[s]) + _EPS) / (_power(out[m]) + _EPS)
+    ratio_in = (_power(mix[s]) + _EPS) / (_power(mix[m]) + _EPS)
+    return 10.0 * np.log10(ratio_out / ratio_in)
 
 
 def retention_db(

@@ -145,21 +145,22 @@ below is grouped by the axis each item moves: **quality**, **speed**, or
 **user-friendliness**. A1 (the quality harness) is the tool the quality and
 speed audits run through; it's already committed (`85059cd`, `quality_harness/`,
 `--audit a2` / `--audit a4`). The audits need a Python env with
-onnxruntime/OpenVINO and the Voc_FT model — on an OpenVINO box, not this one.
+onnxruntime/OpenVINO and the Voc_FT model; `docs/A2_AUDIT_RESULTS.md` notes the
+overlay-venv workaround for the shared venv's numpy/SciPy mismatch.
 
 ### Quality (how clean the output is)
 
 | # | Item | Status / note |
 |---|---|---|
 | A3 | **Stereo output** (§6.1). The single biggest listener-visible win — every processed video is mono today, and Voc_FT/CDX23 are stereo models being fed duplicated mono. | Not started. Watch DeepFilterNet's cost (doubles per channel — a speed catch, see below). |
-| A2-q | **Audit the quality-shaping stages:** the −40 dB pre-gate (§6.2, suspected crossover distortion on quiet speech), the Normal-mode 10 kHz low-pass (§6.3, top-octave vocal damage the live repo saw), and whether DeepFilterNet and the VAD gate actually help or just cost time. | Wired as `--audit a2`; run and read the before/after table before touching defaults. |
+| A2-q | **Audit the quality-shaping stages:** the −40 dB pre-gate (§6.2), the Normal-mode 10 kHz low-pass (§6.3), DeepFilterNet, the VAD gate. | **Done 2026-10-30**, `docs/A2_AUDIT_RESULTS.md`. Pre-gate removed (destroyed dialogue in quiet files, bought nothing at normal level). DeepFilterNet helps (+1.2 to +2.2 dB contrast, no dialogue damage). VAD a small help. Low-pass and Balanced EQ are listening-session calls, defaults unchanged. |
 | A4 | **"Music level" control** — add the removed music back at −20 / −12 dB instead of deleting it. A gentle mixback hides separation artefacts and sounds more natural than a hard cut. | Harness has `--audit a4` to find the level. UI is the user-friendliness half (A4-ui). |
 
 ### Speed (how fast, how big)
 
 | # | Item | Status / note |
 |---|---|---|
-| A2-s | **Overlap 0.25 vs 0.1.** 0.1 is faster; measure whether it costs quality. If not, it's a free speed default. | `--audit a2` covers it. |
+| A2-s | **Overlap 0.25 vs 0.1.** 0.1 is faster; measure whether it costs quality. If not, it's a free speed default. | **Measured 2026-10-30:** ~20% faster and neutral on real dialogue, but worse on the SFX-leak clip. Kept 0.25; recheck on a longer dense-music clip. |
 | — | **Shrink the bundle** (~1.09 GB → ~870 MB; §6.5). | Cause found (triton + torch tests); spec fixed 2026-10-30. Confirm with the next build. |
 | — | **Stereo's speed catch:** DeepFilterNet runs per channel, so stereo roughly doubles its ~12 s and can push "Best" past the 60 s budget for a 10-min clip. Decide: per-channel, or mono-side DeepFilter + stereo re-inject. | Tied to A3. |
 

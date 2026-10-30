@@ -158,7 +158,7 @@ for mod_name in ("tkinter", "tkinter.filedialog", "tkinter.messagebox",
 tk = sys.modules["tkinter"]
 for attr in ("filedialog", "messagebox", "Label", "Frame", "Scrollbar",
              "Listbox", "Button", "Tk", "Entry", "Checkbutton",
-             "BooleanVar", "StringVar", "IntVar"):
+             "BooleanVar", "StringVar", "IntVar", "PhotoImage"):
     setattr(tk, attr, lambda *a, **kw: None)
 tk.BooleanVar = lambda *a, **kw: types.SimpleNamespace(
     get=lambda: False, set=lambda v: None)
@@ -263,7 +263,7 @@ def test_pp_aggressive():
     out = app.advanced_postprocess_chunked(fresh_f(), sr_f, mode='aggressive')
     assert len(out) > 0
 
-run("audio_prefilter  (noise gate + 40 Hz high-pass + normalise)", test_prefilter)
+run("audio_prefilter  (40 Hz high-pass + normalise)", test_prefilter)
 run("postprocess — Normal mode     (SciPy filters, 30 s chunks)",  test_pp_normal)
 run("postprocess — Balanced mode   (de-esser + formant boost)",    test_pp_balanced)
 run("postprocess — Aggressive mode (heavy de-ess + formant boost)",test_pp_aggressive)

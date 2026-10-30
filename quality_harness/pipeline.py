@@ -50,7 +50,7 @@ def load_app():
     for attr in (
         "filedialog", "messagebox", "Label", "Frame", "Scrollbar", "Listbox",
         "Button", "Tk", "Entry", "Checkbutton", "BooleanVar", "StringVar",
-        "IntVar",
+        "IntVar", "PhotoImage",
     ):
         setattr(tk, attr, lambda *a, **kw: None)
     tk.BooleanVar = lambda *a, **kw: types.SimpleNamespace(
@@ -93,7 +93,7 @@ class StageConfig:
     name: str = "default"
     # Prefilter
     prefilter: bool = True
-    prefilter_gate: bool = True        # the -40 dB per-sample pre-gate (A2)
+    prefilter_gate: bool = False       # the -40 dB per-sample pre-gate (off since A2)
     # Separation
     separator: str = "fast_mdx"        # fast_mdx | demucs | none
     model_choice: str = "htdemucs"
