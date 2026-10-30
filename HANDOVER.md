@@ -129,9 +129,9 @@ Runs UVR-MDX-NET-Voc_FT on **OpenVINO**: BF16 compute where the CPU supports it 
 
 ## 6. Known issues, not yet fixed
 
-1. **Output is mono.** Extraction and export both use `ac=1`, so every processed video loses its stereo image. Voc_FT and CDX23 are stereo models; the engine currently feeds them duplicated mono.
-2. **Suspected distortion from the −40 dB per-sample pre-gate** in `audio_prefilter`. It zeroes every sample with |x| < 0.01, which includes every zero-crossing, so I expect crossover distortion on quiet speech. **Not yet measured.** The effects path already skips it (`gate=False`).
-3. **Normal mode applies a 10 kHz low-pass.** The live repo found vocal damage concentrated in the top octave; worth measuring here.
+1. ~~**Output is mono.**~~ **Fixed 2026-10-31 (A3):** stereo and surround sources are processed and exported in stereo; mono sources stay mono. See `docs/A3_STEREO_RESULTS.md`.
+2. ~~**Suspected distortion from the −40 dB per-sample pre-gate.**~~ **Fixed 2026-10-30 (A2):** confirmed (dialogue magSNR 19.2 → 9.4 dB on a file 24 dB down) and turned off. See `docs/A2_AUDIT_RESULTS.md`.
+3. **Normal mode applies a 10 kHz low-pass.** Measured in A2: it removes the voice's top-octave "air" (−20 to −43 dB of voice energy) and 7 dB more high-band music leak, and leaves 300 Hz–8 kHz untouched. Whether the air matters is a listening call; Normal is not the default.
 4. **MRX effects leak audible music** (−21 dB after cleanup). The UI label says "some music bleed".
 5. **Bundle is ~1.09 GB.** Cause found and fixed in the spec (see §2.3); needs a build to confirm ~870 MB. **Note:** `~/.venvs/music-assassin` currently has numpy 1.26.4, which mismatches its SciPy 1.18; rebuild needs numpy 2.x (see §5).
 6. **Leftover from the old pipeline:** `separate_with_audio_separator` is still there with its per-chunk peak scaling. It only runs if a user picks the old "MDX-Net" entries.
@@ -152,7 +152,7 @@ overlay-venv workaround for the shared venv's numpy/SciPy mismatch.
 
 | # | Item | Status / note |
 |---|---|---|
-| A3 | **Stereo output** (§6.1). The single biggest listener-visible win — every processed video is mono today, and Voc_FT/CDX23 are stereo models being fed duplicated mono. | Not started. Watch DeepFilterNet's cost (doubles per channel — a speed catch, see below). |
+| A3 | **Stereo output** (§6.1). | **Done 2026-10-31**, `docs/A3_STEREO_RESULTS.md`. Quality-neutral for centred dialogue; kept effects keep their stereo image. CDX23 runs on the mid with stem-share transfer (fed real stereo it leaked 10 dB more). Falls back to mono when RAM is short; no UI switch yet. |
 | A2-q | **Audit the quality-shaping stages:** the −40 dB pre-gate (§6.2), the Normal-mode 10 kHz low-pass (§6.3), DeepFilterNet, the VAD gate. | **Done 2026-10-30**, `docs/A2_AUDIT_RESULTS.md`. Pre-gate removed (destroyed dialogue in quiet files, bought nothing at normal level). DeepFilterNet helps (+1.2 to +2.2 dB contrast, no dialogue damage). VAD a small help. Low-pass and Balanced EQ are listening-session calls, defaults unchanged. |
 | A4 | **"Music level" control** — add the removed music back at −20 / −12 dB instead of deleting it. A gentle mixback hides separation artefacts and sounds more natural than a hard cut. | Harness has `--audit a4` to find the level. UI is the user-friendliness half (A4-ui). |
 
@@ -162,7 +162,7 @@ overlay-venv workaround for the shared venv's numpy/SciPy mismatch.
 |---|---|---|
 | A2-s | **Overlap 0.25 vs 0.1.** 0.1 is faster; measure whether it costs quality. If not, it's a free speed default. | **Measured 2026-10-30:** ~20% faster and neutral on real dialogue, but worse on the SFX-leak clip. Kept 0.25; recheck on a longer dense-music clip. |
 | — | **Shrink the bundle** (~1.09 GB → ~870 MB; §6.5). | Cause found (triton + torch tests); spec fixed 2026-10-30. Confirm with the next build. |
-| — | **Stereo's speed catch:** DeepFilterNet runs per channel, so stereo roughly doubles its ~12 s and can push "Best" past the 60 s budget for a 10-min clip. Decide: per-channel, or mono-side DeepFilter + stereo re-inject. | Tied to A3. |
+| — | **Stereo's speed catch:** DeepFilterNet per channel would double its cost. | **Resolved (A3):** DeepFilterNet runs once on the mid and its gain is applied to both channels, +5 s per 10 min instead of +33 s, same quality. MRX keep-effects is the larger stereo cost (~+20 s per 10 min under load). |
 
 ### User-friendliness (how pleasant to use)
 

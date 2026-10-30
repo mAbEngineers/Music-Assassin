@@ -105,6 +105,10 @@ class StageConfig:
     vad_gate: bool = False
     # A4 music mixback: add this fraction of the removed music back (0 = delete)
     music_mixback_db: float | None = None  # None/Off, or e.g. -20, -12
+    # A3 stereo: False downmixes a stereo clip to mono first (as ffmpeg ac=1
+    # does), i.e. the pre-A3 pipeline. stereo_enhance mirrors the app global.
+    stereo: bool = True
+    stereo_enhance: str = "mid"            # mid | per_channel
 
     def describe(self) -> dict:
         return dataclasses.asdict(self)
@@ -137,12 +141,12 @@ def _separate(app, waveform: np.ndarray, sr: int, cfg: StageConfig):
             waveform, sr, overlap=cfg.fast_overlap
         )
         # Music estimate for A4 mixback = what the separator removed.
-        music = waveform[: len(vocals)] - vocals
+        music = waveform[..., : vocals.shape[-1]] - vocals
         return vocals, music
     if cfg.separator == "demucs":
         app.model_choice = cfg.model_choice
-        vocals = app.separate_with_demucs(waveform, sr)
-        music = waveform[: len(vocals)] - vocals
+        vocals = app.separate_with_demucs(app._mid(waveform), sr)
+        music = app._mid(waveform)[: len(vocals)] - vocals
         return vocals, music
     raise ValueError(f"unsupported separator for harness: {cfg.separator!r}")
 
@@ -153,6 +157,10 @@ def run_config(mix: np.ndarray, sr: int, cfg: StageConfig) -> RunResult:
     app.sample_rate = sr
     stages: list[str] = []
     x = np.asarray(mix, dtype=np.float32)
+    if x.ndim == 2 and not cfg.stereo:
+        x = x.mean(axis=0)
+        stages.append("downmix")
+    app.stereo_enhance = cfg.stereo_enhance
     t0 = time.perf_counter()
     try:
         if cfg.prefilter:
@@ -180,8 +188,8 @@ def run_config(mix: np.ndarray, sr: int, cfg: StageConfig) -> RunResult:
 
         if cfg.music_mixback_db is not None and music is not None:
             gain = float(10.0 ** (cfg.music_mixback_db / 20.0))
-            n = min(len(vocals), len(music))
-            vocals = vocals[:n] + gain * music[:n]
+            n = min(vocals.shape[-1], music.shape[-1])
+            vocals = vocals[..., :n] + gain * music[..., :n]
             stages.append("music_mixback:%gdB" % cfg.music_mixback_db)
 
         proc = time.perf_counter() - t0

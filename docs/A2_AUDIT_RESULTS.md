@@ -75,7 +75,7 @@ There is no measurable harm to intelligibility. Whether losing the air matters i
 
 ### Overlap 0.25 vs 0.10
 
-On the real dialogue clips, 0.10 is quality-neutral and cuts total processing time by about 20%. But on the §2.2 SFX-leak clip (a real OP with sound effects) the level-dependent metrics got clearly worse:
+On the real dialogue clips, 0.10 is quality-neutral and cuts total processing time by about 20%. But on the harness's SFX-leak clip the level-dependent metrics got clearly worse. (Correction, 2026-10-31: run without arguments, `build_sfx_leak_mix()` synthesises both the music bed and the effects. This was the synthetic stand-in, not the real OP and episode effects of §2.2, so it is weak evidence.)
 - music suppression fell from 21.3 to 13.8 dB;
 - effects leak rose from 6.4 to 13.9 dB.
 

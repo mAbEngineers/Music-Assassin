@@ -44,14 +44,29 @@ def _masked(sig: np.ndarray, mask: np.ndarray) -> np.ndarray:
 
 
 def score_run(clip: corpus.Clip, res: RunResult) -> dict:
-    """All metrics for one (clip, config) pair, as a flat dict."""
-    out = res.output
-    n = min(out.size, clip.mix.size)
+    """All metrics for one (clip, config) pair, as a flat dict.
+
+    A stereo clip is scored per channel against that channel's stems and the
+    channels averaged; a mono output (the downmix config) is scored against
+    each channel as if played on both speakers."""
+    if clip.mix.ndim == 1:
+        scores = _score_channel(clip, res.output, slice(None))
+    else:
+        per = [_score_channel(clip, res.output if res.output.ndim == 1 else res.output[c], c)
+               for c in range(clip.mix.shape[0])]
+        scores = {k: float(np.mean([p[k] for p in per])) for k in per[0]}
+    scores["rtf"] = metrics.rtf(res.proc_seconds, clip.duration_s)
+    scores["peak_rss_mb"] = res.peak_rss_mb
+    return metrics.summarise(scores)
+
+
+def _score_channel(clip: corpus.Clip, out: np.ndarray, ch) -> dict:
+    n = min(out.shape[-1], clip.mix.shape[-1])
     out = out[:n]
-    mix = clip.mix[:n]
-    speech = clip.speech[:n]
-    music = clip.music[:n]
-    effects = clip.effects[:n]
+    mix = clip.mix[ch][..., :n]
+    speech = clip.speech[ch][..., :n]
+    music = clip.music[ch][..., :n]
+    effects = clip.effects[ch][..., :n]
     speech_mask = clip.speech_mask[:n]
     effects_mask = clip.effects_mask[:n]
     music_only = clip.music_only_mask[:n]
@@ -88,9 +103,7 @@ def score_run(clip: corpus.Clip, res: RunResult) -> dict:
             out, ~effects_mask & music_only, reference_level=effects
         )
     scores["musical_noise"] = metrics.musical_noise_index(out, clip.sr)
-    scores["rtf"] = metrics.rtf(res.proc_seconds, clip.duration_s)
-    scores["peak_rss_mb"] = res.peak_rss_mb
-    return metrics.summarise(scores)
+    return scores
 
 
 def run_matrix(
@@ -134,6 +147,22 @@ def audit_a2_configs(separator: str) -> list[StageConfig]:
         StageConfig(name="vad_on", vad_gate=True, **base),
         StageConfig(name="deepfilter_on", enhancer="deepfilter", **base),
         StageConfig(name="best(df+vad)", enhancer="deepfilter", vad_gate=True, **base),
+    ]
+
+
+def audit_a3_configs(separator: str) -> list[StageConfig]:
+    """A3 stereo: the pre-A3 mono pipeline (downmix first) against stereo,
+    and the two ways to run a mono enhancer on stereo."""
+    base = dict(separator=separator)
+    return [
+        StageConfig(name="mono", stereo=False, **base),
+        StageConfig(name="stereo", **base),
+        StageConfig(name="mono+df", stereo=False, enhancer="deepfilter", **base),
+        StageConfig(name="stereo+df_mid", enhancer="deepfilter", **base),
+        StageConfig(name="stereo+df_perch", enhancer="deepfilter",
+                    stereo_enhance="per_channel", **base),
+        StageConfig(name="mono+best", stereo=False, enhancer="deepfilter", vad_gate=True, **base),
+        StageConfig(name="stereo+best_mid", enhancer="deepfilter", vad_gate=True, **base),
     ]
 
 
@@ -223,7 +252,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="DSP-only run (separator=none), no models needed")
     ap.add_argument("--separator", default="fast_mdx",
                     choices=["none", "fast_mdx", "demucs"])
-    ap.add_argument("--audit", choices=["a2", "a4"],
+    ap.add_argument("--audit", choices=["a2", "a3", "a4"],
                     help="which audit config set to run")
     ap.add_argument("--clips", default="all",
                     choices=["synthetic", "sfx", "real", "all"])
@@ -233,6 +262,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--real-vocals", action="append", default=[],
                     help="separated vocals of the matching --real-song; its "
                     "silent stretches mark the instrumental-only bed")
+    ap.add_argument("--stereo", action="store_true",
+                    help="Tier 3 clips keep the songs' stereo beds (speech centred)")
     args = ap.parse_args(argv)
 
     clips = []
@@ -245,7 +276,8 @@ def main(argv: list[str] | None = None) -> int:
             ap.error("--real-speech needs matching --real-song/--real-vocals pairs")
         if args.clips in ("real", "all"):
             clips += corpus.real_dialogue_set(
-                args.real_speech, list(zip(args.real_song, args.real_vocals)))
+                args.real_speech, list(zip(args.real_song, args.real_vocals)),
+                stereo=args.stereo)
     elif args.clips == "real":
         ap.error("--clips real needs --real-speech, --real-song and --real-vocals")
 
@@ -262,6 +294,10 @@ def main(argv: list[str] | None = None) -> int:
         configs = audit_a2_configs(args.separator)
         title = f"A2 audits ({args.separator})"
         slug = f"a2_{args.separator}"
+    elif args.audit == "a3":
+        configs = audit_a3_configs(args.separator)
+        title = f"A3 stereo ({args.separator})"
+        slug = f"a3_{args.separator}"
     elif args.audit == "a4":
         configs = a4_mixback_configs(args.separator)
         title = f"A4 music mixback ({args.separator})"

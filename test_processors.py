@@ -379,6 +379,75 @@ run("prefilter → VAD → balanced postprocess → no enhancer", test_full_dsp)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# S — Stereo  (A3: stereo sources stay stereo end to end)
+# ═══════════════════════════════════════════════════════════════════════════════
+_log.info(f"\n{B}[S] Stereo  ([2, n] through every stage){E}")
+
+def _stereo_clip():
+    path = os.path.join(tmp, "clip_stereo.wav")
+    if not os.path.isfile(path):
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", str(CLIP_START_SEC),
+                        "-i", SAMPLE_VIDEO, "-t", str(FILTER_CLIP_SEC), "-vn",
+                        "-ac", "2", "-ar", str(SAMPLE_RATE), "-f", "wav", path], check=True)
+    a, sr = sf.read(path, dtype='float32')
+    return np.ascontiguousarray(a.T), sr
+
+def test_stereo_dsp():
+    st, sr = _stereo_clip()
+    n = st.shape[1]
+    a = app.audio_prefilter(st, sr)
+    assert a.shape == (2, n)
+    if app.VAD_AVAILABLE:
+        a = app.apply_vad_gate(a, sr)
+        assert a.shape == (2, n)
+    for mode in ('normal', 'balanced', 'aggressive'):
+        p = app.advanced_postprocess_chunked(a, sr, mode=mode)
+        assert p.shape == (2, n) and p.dtype == np.float32, mode
+    # Dual-mono in -> identical channels out (stages share gains across channels)
+    dm = app.advanced_postprocess_chunked(np.stack([st[0], st[0]]), sr, mode='balanced')
+    assert np.array_equal(dm[0], dm[1])
+    assert app.mix_effects(p, p * 0.3, 1.0, sr).shape == (2, n)
+    assert app.mix_effects(p[0], p * 0.3, 1.0, sr).shape == (2, n)   # mono dialogue + stereo fx
+
+def test_stereo_transfer():
+    st, sr = _stereo_clip()
+    mid = st.mean(axis=0)
+    err = float(np.abs(app._transfer_gain(st, mid, mid, sr) - st).max())
+    _log.info(f"  identity gain transfer: max err {err:.2e}")
+    assert err < 1e-4
+
+def test_stereo_enhancer():
+    if not app.DF_AVAILABLE:
+        return "skip"
+    st, sr = _stereo_clip()
+    app.enhancer_choice = 'deepfilter'
+    for how in ('mid', 'per_channel'):
+        app.stereo_enhance = how
+        out = app.apply_enhancer(st, sr)
+        assert out.shape == st.shape and out.dtype == np.float32, how
+    app.stereo_enhance, app.enhancer_choice = 'mid', 'none'
+
+def test_stereo_fast_engine():
+    if not app.FAST_ENGINE_AVAILABLE:
+        return "skip"
+    st, sr = _stereo_clip()
+    out = app.fast_separation.separate_vocals_mdx(st, sr)
+    assert out.shape == st.shape
+    # Dual-mono stereo feeds the model exactly what the mono path does
+    x = st[0]
+    dual = app.fast_separation.separate_vocals_mdx(np.stack([x, x]), sr)
+    mono = app.fast_separation.separate_vocals_mdx(x, sr)
+    assert np.allclose(dual.mean(axis=0), mono, atol=1e-5)
+    fx = app.fast_separation.separate_dme(st, "mrx", sr, want=("effects",))["effects"]
+    assert fx.shape == st.shape
+
+run("stereo DSP  (prefilter, VAD, post-process, effects mix keep [2, n])", test_stereo_dsp)
+run("stereo gain transfer  (identity within 1e-4)",                    test_stereo_transfer)
+run("stereo enhancer  (DeepFilterNet, mid and per-channel)",            test_stereo_enhancer)
+run("stereo fast engine  (Voc_FT stereo, dual-mono == mono, MRX fx)",   test_stereo_fast_engine)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # E — Separators  (20 s clip, one at a time, RAM-guarded)
 # ═══════════════════════════════════════════════════════════════════════════════
 if SKIP_SEPARATORS:

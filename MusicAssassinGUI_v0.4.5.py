@@ -131,6 +131,13 @@ vad_enabled       = False     # Silero VAD gate — silence non-vocal gaps
 enhancer_choice       = "none"
 openvino_enabled      = False   # Use OpenVINO provider for ONNX enhancer inference
 transient_gate_enabled = False  # Apply spectral transient gate after enhancer
+# Stereo: stereo (or surround, downmixed) sources are processed and exported
+# in stereo, mono sources stay mono. Arrays are [n] mono or [2, n] stereo.
+stereo_output = True
+# Mono-only enhancers on stereo: "mid" runs the enhancer once on (L+R)/2 and
+# applies its time-frequency gain to each channel; "per_channel" runs it on
+# L and R separately (about twice the time).
+stereo_enhance = "mid"
 
 # Session model cache — key "name:quant" → loaded torch model.
 # Stays alive for the whole session so batch runs don't reload weights per file.
@@ -285,8 +292,63 @@ def update_progress(value, total):
 # AUDIO DSP PIPELINE (Pre-Processing)
 # ============================================================================
 
+def _mid(x):
+    """Mono mid (L+R)/2 of a [2, n] signal; mono [n] passes through."""
+    return x if x.ndim == 1 else x.mean(axis=0)
+
+
+def _transfer_gain(x, mid_in, mid_out, sr=44100, n_fft=2048, hop=512, block_s=30):
+    """Apply a mono stage's effect to every channel of x as a gain mask.
+
+    The stage turned mid_in into mid_out; its time-frequency gain
+    |MidOut| / |MidIn| (capped at 1, the stages only remove) is applied to
+    each channel's STFT, so the stereo image survives. Runs in blocks with a
+    linear crossfade so feature-length files don't need a whole-file STFT.
+    """
+    try:
+        import torch      # ~10x faster than scipy's STFT here
+        win = torch.hann_window(n_fft)
+
+        def stft(a):
+            return torch.stft(torch.from_numpy(np.ascontiguousarray(a, dtype=np.float32)),
+                              n_fft, hop, window=win, center=True, return_complex=True)
+
+        def istft(X, length):
+            return torch.istft(X, n_fft, hop, window=win, center=True, length=length).numpy()
+    except ImportError:
+        from scipy import signal
+        kw = dict(nperseg=n_fft, noverlap=n_fft - hop)
+
+        def stft(a):
+            return signal.stft(a, axis=-1, **kw)[2]
+
+        def istft(X, length):
+            return signal.istft(X, **kw)[1][..., :length]
+
+    n = x.shape[-1]
+    out = np.zeros_like(x, dtype=np.float32)
+    blk, ov = int(block_s * sr), int(sr)
+    for idx, s in enumerate(range(0, max(n - ov, 1), blk - ov)):
+        e = min(s + blk, n)
+        mi, mo = stft(mid_in[s:e]), stft(mid_out[s:e])
+        g = (mo.abs() / (mi.abs() + 1e-8)).clamp(max=1.0) if hasattr(mo, "clamp") \
+            else np.minimum(np.abs(mo) / (np.abs(mi) + 1e-8), 1.0)
+        del mi, mo
+        y = istft(stft(x[:, s:e]) * g, e - s).astype(np.float32)
+        del g
+        if idx == 0:
+            out[:, s:e] = y
+        else:
+            f = min(ov, e - s)
+            ramp = np.linspace(0.0, 1.0, f, dtype=np.float32)
+            out[:, s:s + f] = out[:, s:s + f] * (1 - ramp) + y[:, :f] * ramp
+            out[:, s + f:e] = y[:, f:]
+    return out
+
+
 def audio_prefilter(waveform, sr=44100, gate=False):
     """Advanced pre-filtering: (optional gate) + high-pass + normalize.
+    Works on mono [n] or stereo [2, n]; the normalize gain is shared.
     The per-sample -40 dBFS gate is off by default and no caller enables it:
     it wipes out quiet ambience, and since it runs before normalization it
     distorts dialogue in quiet files (A2 audit, quality_harness/)."""
@@ -324,7 +386,10 @@ def advanced_postprocess_chunked(vocals, sr=44100, mode='balanced', chunk_size=N
 
     print(f"Processing in {chunk_size//sr}s chunks with {overlap_size//sr}s overlap...")
 
-    num_chunks = int(np.ceil(len(vocals) / (chunk_size - overlap_size)))
+    # Mono [n] or stereo [2, n]: chunks run along the last axis, and the
+    # filters, de-esser decision and normalize gain are shared by both channels.
+    n = vocals.shape[-1]
+    num_chunks = int(np.ceil(n / (chunk_size - overlap_size)))
     output = np.zeros_like(vocals, dtype=np.float32)
 
     for chunk_idx in range(num_chunks):
@@ -332,8 +397,8 @@ def advanced_postprocess_chunked(vocals, sr=44100, mode='balanced', chunk_size=N
         update_status(f"Post-processing: chunk {chunk_idx+1}/{num_chunks}")
 
         start = chunk_idx * (chunk_size - overlap_size)
-        end = min(start + chunk_size, len(vocals))
-        chunk = vocals[start:end].copy()
+        end = min(start + chunk_size, n)
+        chunk = vocals[..., start:end].copy()
 
         # Apply mode-specific processing
         if mode == 'normal':
@@ -344,18 +409,19 @@ def advanced_postprocess_chunked(vocals, sr=44100, mode='balanced', chunk_size=N
             chunk = _postprocess_chunk_aggressive(chunk, sr)
 
         # Handle overlap-add for smooth transitions
+        clen = chunk.shape[-1]
         if chunk_idx == 0:
-            output[start:start+len(chunk)] = chunk
+            output[..., start:start+clen] = chunk
         else:
-            fade_len = min(overlap_size, len(chunk))
+            fade_len = min(overlap_size, clen)
             if fade_len > 0:
                 fade_in = np.linspace(0, 1, fade_len, dtype=np.float32)
                 fade_out = 1 - fade_in
-                output[start:start+fade_len] = (
-                    output[start:start+fade_len] * fade_out +
-                    chunk[:fade_len] * fade_in
+                output[..., start:start+fade_len] = (
+                    output[..., start:start+fade_len] * fade_out +
+                    chunk[..., :fade_len] * fade_in
                 )
-                output[start+fade_len:start+len(chunk)] = chunk[fade_len:]
+                output[..., start+fade_len:start+clen] = chunk[..., fade_len:]
 
         del chunk
         gc.collect()
@@ -372,9 +438,9 @@ def advanced_postprocess_chunked(vocals, sr=44100, mode='balanced', chunk_size=N
         output *= _last_post_gain
 
     # Fade the last 0.5 s to silence — removes demucs tail noise/artifacts.
-    fade_samps = min(int(sr * 0.5), len(output))
+    fade_samps = min(int(sr * 0.5), n)
     if fade_samps > 0:
-        output[-fade_samps:] *= np.linspace(1.0, 0.0, fade_samps, dtype=np.float32)
+        output[..., -fade_samps:] *= np.linspace(1.0, 0.0, fade_samps, dtype=np.float32)
 
     print(f"Post-processing complete")
     return output
@@ -389,17 +455,20 @@ def mix_effects(vocals, effects, gain, sr=44100, ceiling=0.98, block=512):
     """
     print(f"Mixing sound effects back in (gain {20 * np.log10(max(gain, 1e-10)):+.1f} dB)...")
     update_status("Mixing sound effects back in...")
-    n = min(len(vocals), len(effects))
-    out = vocals[:n] + effects[:n].astype(np.float32) * np.float32(gain)
+    # Either may be mono [n] or stereo [2, n]; mono broadcasts into stereo.
+    n = min(vocals.shape[-1], effects.shape[-1])
+    out = vocals[..., :n] + effects[..., :n].astype(np.float32) * np.float32(gain)
 
     # Same tail fade as advanced_postprocess_chunked applied to the dialogue.
     fade_samps = min(int(sr * 0.5), n)
     if fade_samps > 0:
-        out[-fade_samps:] *= np.linspace(1.0, 0.0, fade_samps, dtype=np.float32)
+        out[..., -fade_samps:] *= np.linspace(1.0, 0.0, fade_samps, dtype=np.float32)
 
+    # One gain curve for all channels (from the louder one), so limiting
+    # doesn't shift the stereo image.
     nb = int(np.ceil(n / block))
     padded = np.zeros(nb * block, np.float32)
-    padded[:n] = np.abs(out)
+    padded[:n] = np.abs(out) if out.ndim == 1 else np.abs(out).max(axis=0)
     peaks = padded.reshape(nb, block).max(axis=1)
     g = np.minimum(1.0, ceiling / np.maximum(peaks, 1e-10))
     if g.min() < 1.0:
@@ -408,7 +477,7 @@ def mix_effects(vocals, effects, gain, sr=44100, ceiling=0.98, block=512):
         step = 1 << 20   # in slices: a whole-file index array costs 8 bytes/sample
         for s in range(0, n, step):
             e = min(s + step, n)
-            out[s:e] *= np.interp(np.arange(s, e), centres, g).astype(np.float32)
+            out[..., s:e] *= np.interp(np.arange(s, e), centres, g).astype(np.float32)
         print(f"  Limiter: {np.mean(g < 1.0) * 100:.1f}% of blocks reduced, "
               f"max {-20 * np.log10(g.min()):.1f} dB")
     return out
@@ -1006,7 +1075,8 @@ def apply_vad_gate(vocals, sr=44100):
     Silero VAD analyses audio at 16 kHz. The detected speech timestamps are
     converted back to the original sample rate and used to build a smooth
     binary mask (with 80 ms padding and 15 ms fade edges around each segment)
-    so the gate introduces no audible clicks.
+    so the gate introduces no audible clicks. Stereo [2, n] is analysed on
+    its mid and both channels share the mask.
     """
     if not VAD_AVAILABLE:
         print("  VAD gate: torch not available — skipped")
@@ -1021,7 +1091,9 @@ def apply_vad_gate(vocals, sr=44100):
         # Resample to 16 kHz (Silero's expected rate)
         vad_sr = 16000
         g      = math.gcd(sr, vad_sr)
-        v16k   = resample_poly(vocals, vad_sr // g, sr // g).astype('float32')
+        mono   = _mid(vocals)
+        n      = len(mono)
+        v16k   = resample_poly(mono, vad_sr // g, sr // g).astype('float32')
 
         # Load model (cached after first call)
         _run_in_background(_get_silero_vad, "Loading Silero VAD...")
@@ -1071,11 +1143,11 @@ def apply_vad_gate(vocals, sr=44100):
         scale  = sr / vad_sr
         pad_s  = int(0.25  * sr)   # 250 ms padding around each segment
         fade_s = int(0.030 * sr)   # 30 ms fade edges
-        vad_mask = np.zeros(len(vocals), dtype='float32')
+        vad_mask = np.zeros(n, dtype='float32')
 
         for ts in timestamps:
-            s = max(0,           int(ts['start'] * scale) - pad_s)
-            e = min(len(vocals), int(ts['end']   * scale) + pad_s)
+            s = max(0, int(ts['start'] * scale) - pad_s)
+            e = min(n, int(ts['end']   * scale) + pad_s)
             vad_mask[s:e] = 1.0
             fi = min(fade_s, e - s)
             vad_mask[s:s + fi] = np.linspace(0.0, 1.0, fi, dtype='float32')
@@ -1092,7 +1164,7 @@ def apply_vad_gate(vocals, sr=44100):
         from scipy.ndimage import binary_dilation, uniform_filter1d
 
         sos_voice = butter(4, [200, 4000], btype='band', fs=sr, output='sos')
-        voice_band = sosfilt(sos_voice, vocals)
+        voice_band = sosfilt(sos_voice, mono)
 
         hop = max(1, int(0.010 * sr))   # 10 ms hops
         n_fr = (len(voice_band) + hop - 1) // hop
@@ -1136,12 +1208,12 @@ def apply_vad_gate(vocals, sr=44100):
             # Energy fallback only where Silero sees nearby speech
             voiced_frames = voiced_frames & silero_expanded
 
-            energy_mask = np.repeat(voiced_frames, hop)[:len(vocals)].astype(np.float32)
+            energy_mask = np.repeat(voiced_frames, hop)[:n].astype(np.float32)
             smooth = max(1, int(0.020 * sr))   # 20 ms smoothing
             energy_mask = uniform_filter1d(energy_mask.astype(np.float64),
                                            size=smooth, mode='nearest').astype(np.float32)
         else:
-            energy_mask = np.zeros(len(vocals), dtype='float32')
+            energy_mask = np.zeros(n, dtype='float32')
 
         # ── Combine: keep frame if either detector says speech ────────────────
         mask = np.maximum(vad_mask, energy_mask).astype('float32')
@@ -1573,7 +1645,22 @@ def apply_speechdenoiser(vocals, sr=44100):
 
 def apply_enhancer(vocals, sr=44100):
     """Dispatch to whichever enhancer is selected, then optionally apply the
-    spectral transient gate if transient_gate_enabled is True."""
+    spectral transient gate if transient_gate_enabled is True.
+
+    The enhancers are mono. Stereo [2, n] follows stereo_enhance: "mid"
+    enhances (L+R)/2 once and transfers the gain to both channels,
+    "per_channel" enhances L and R separately."""
+    if vocals.ndim == 1:
+        return _enhance_mono(vocals, sr)
+    if enhancer_choice == 'none' and not transient_gate_enabled:
+        return vocals
+    if stereo_enhance == 'per_channel':
+        return np.stack([_enhance_mono(c, sr) for c in vocals])
+    mid = _mid(vocals)
+    return _transfer_gain(vocals, mid, _enhance_mono(mid, sr), sr)
+
+
+def _enhance_mono(vocals, sr=44100):
     if enhancer_choice == 'deepfilter':
         out = apply_deepfilter(vocals, sr)
     elif enhancer_choice == 'dpdfnet':
@@ -1735,22 +1822,49 @@ def get_output_params(extension):
 # MAIN PROCESSING FUNCTION
 # ============================================================================
 
+def _stereo_fits(duration):
+    """Whether there is the RAM for stereo. Measured peak RSS (Voc_FT + MRX
+    effects + DeepFilterNet + VAD, 2026-10-31): mono 5.1 GB + 29 MB per
+    minute, stereo 6.0 GB + 59 MB per minute -- about three copies of the
+    track on top of models and per-chunk working set. So stereo needs three
+    stereo copies plus ~3 GB free (models are partly shared/mmapped). Falls
+    back to mono rather than risk running out on a long film."""
+    if duration <= 0:
+        return True
+    try:
+        import psutil
+        avail = psutil.virtual_memory().available
+    except Exception:
+        return True
+    need = 3 * duration * sample_rate * 4 * 2 + 3e9
+    if avail >= need:
+        return True
+    print(f"  Not enough free memory for stereo ({avail / 1e9:.1f} GB free, "
+          f"~{need / 1e9:.1f} GB needed) -- processing in mono")
+    return False
+
+
 def _process_single_track(file_path, input_, track_idx, output_path, video, audio_streams, sub_count=0, duration=0):
     """Extract, separate, and export one audio track.
     keep_others=True preserves all other original audio tracks in video output."""
     global process1, process2, sample_rate, processing_mode, separator_choice
 
-    print(f"  Extracting track a:{track_idx}...")
+    # Stereo when the source has two or more channels (ffmpeg downmixes
+    # surround), unless there isn't the memory for it -- see _stereo_fits().
+    src_ch = next((t.get('channels', 1) for t in audio_streams if t['index'] == track_idx), 1)
+    n_ch = 2 if stereo_output and src_ch >= 2 and _stereo_fits(duration) else 1
+
+    print(f"  Extracting track a:{track_idx} ({'stereo' if n_ch == 2 else 'mono'})...")
     update_status(f"Extracting audio (track {track_idx})...")
     process1 = (input_[f'a:{track_idx}']
-                .output('pipe:1', format='f32le', ac=1, ar=sample_rate)
+                .output('pipe:1', format='f32le', ac=n_ch, ar=sample_rate)
                 .overwrite_output()
                 .global_args('-loglevel', 'error')
                 .run_async(pipe_stdin=False, pipe_stdout=True, pipe_stderr=True))
 
     # Chunked read with live progress bar
-    # float32 mono: 4 bytes/sample × sample_rate samples/sec × duration sec
-    expected_bytes = int(duration * sample_rate * 4) if duration > 0 else 0
+    # float32: 4 bytes/sample × channels × sample_rate samples/sec × duration sec
+    expected_bytes = int(duration * sample_rate * 4 * n_ch) if duration > 0 else 0
     chunks = []
     bytes_read = 0
     chunk_size = 8 * 1024 * 1024   # 8 MB per read — large chunks keep Python overhead low
@@ -1773,9 +1887,11 @@ def _process_single_track(file_path, input_, track_idx, output_path, video, audi
 
     if progress:
         progress['value'] = 0
-    print(f"  Audio extracted: {len(out)//4} samples")
+    print(f"  Audio extracted: {len(out) // (4 * n_ch)} samples x {n_ch} ch")
 
-    waveform = frombuffer(out, dtype='<f4').flatten()
+    waveform = frombuffer(out, dtype='<f4')
+    # Interleaved L R L R ... -> [2, n]; mono stays a flat [n].
+    waveform = np.ascontiguousarray(waveform.reshape(-1, 2).T) if n_ch == 2 else waveform.flatten()
     del out
     gc.collect()
 
@@ -1824,18 +1940,20 @@ def _process_single_track(file_path, input_, track_idx, output_path, video, audi
         else:
             vocals = fast_separation.separate_dme(waveform, "mrx", sample_rate, want=("dialogue",),
                                                   progress=_sep_progress)["dialogue"]
+    # The legacy separators are mono paths: they get the mid, and their mono
+    # dialogue is still mixed with stereo effects if keep-effects is on.
     elif separator_choice == 'audio_separator' and AUDIO_SEPARATOR_AVAILABLE:
-        vocals = separate_with_audio_separator(waveform, sample_rate, model_choice)
+        vocals = separate_with_audio_separator(_mid(waveform), sample_rate, model_choice)
     elif separator_choice == 'demucs' and DEMUCS_AVAILABLE:
-        vocals = separate_with_demucs(waveform, sample_rate)
+        vocals = separate_with_demucs(_mid(waveform), sample_rate)
     elif separator_choice == 'spleeter' and SPLEETER_AVAILABLE:
-        vocals = separate_with_spleeter(waveform, sample_rate)
+        vocals = separate_with_spleeter(_mid(waveform), sample_rate)
     elif DEMUCS_AVAILABLE:
         print("WARNING: Falling back to DEMUCS")
-        vocals = separate_with_demucs(waveform, sample_rate)
+        vocals = separate_with_demucs(_mid(waveform), sample_rate)
     elif SPLEETER_AVAILABLE:
         print("WARNING: Falling back to Spleeter")
-        vocals = separate_with_spleeter(waveform, sample_rate)
+        vocals = separate_with_spleeter(_mid(waveform), sample_rate)
     else:
         print("No separator available")
         return False
@@ -1897,7 +2015,8 @@ def _process_single_track(file_path, input_, track_idx, output_path, video, audi
 
     ext = os.path.splitext(output_path)[1][1:]
     _, is_video = get_output_params(ext)
-    vocals_pipe = ffmpeg_input('pipe:0', format='f32le', ar=sample_rate, ac=1)
+    vocals_pipe = ffmpeg_input('pipe:0', format='f32le', ar=sample_rate,
+                               ac=1 if vocals.ndim == 1 else vocals.shape[0])
 
     if is_video and video:
         other_indices = [t['index'] for t in audio_streams if t['index'] != track_idx]
@@ -1925,13 +2044,19 @@ def _process_single_track(file_path, input_, track_idx, output_path, video, audi
                     .global_args('-loglevel', 'error')
                     .run_async(pipe_stdin=True, pipe_stderr=True))
 
-    # Stream vocals to ffmpeg in 8 MB chunks — avoids holding a full copy
-    # of the output in RAM alongside the numpy array
+    # Stream vocals to ffmpeg in 8M-sample chunks — avoids holding a full
+    # copy of the output in RAM alongside the numpy array. Stereo is
+    # interleaved one chunk at a time.
     _chunk = 8 * 1024 * 1024
-    _view = memoryview(vocals.astype('<f4', copy=False))
-    del vocals
-    for _i in range(0, len(_view), _chunk):
-        process2.stdin.write(_view[_i:_i + _chunk])
+    if vocals.ndim == 1:
+        _view = memoryview(vocals.astype('<f4', copy=False))
+        del vocals
+        for _i in range(0, len(_view), _chunk):
+            process2.stdin.write(_view[_i:_i + _chunk])
+    else:
+        for _i in range(0, vocals.shape[1], _chunk // 2):
+            process2.stdin.write(np.ascontiguousarray(vocals[:, _i:_i + _chunk // 2].T, dtype='<f4'))
+        del vocals
     process2.stdin.close()
     process2.wait()
     process2.kill()

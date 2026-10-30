@@ -35,11 +35,11 @@ class Clip:
 
     name: str
     sr: int
-    mix: np.ndarray          # what the pipeline receives (mono float32)
-    speech: np.ndarray       # clean speech stem
-    music: np.ndarray        # clean music stem
-    effects: np.ndarray      # clean effects stem
-    speech_mask: np.ndarray  # True where speech is active
+    mix: np.ndarray          # what the pipeline receives: mono [n] or stereo [2, n] float32
+    speech: np.ndarray       # clean speech stem (same shape as mix)
+    music: np.ndarray        # clean music stem (same shape as mix)
+    effects: np.ndarray      # clean effects stem (same shape as mix)
+    speech_mask: np.ndarray  # True where speech is active (always [n])
     music_mask: np.ndarray   # True where music is active
     effects_mask: np.ndarray  # True where effects are active
 
@@ -50,7 +50,7 @@ class Clip:
 
     @property
     def duration_s(self) -> float:
-        return self.mix.size / self.sr
+        return self.mix.shape[-1] / self.sr
 
 
 def _rng(seed: int) -> np.random.Generator:
@@ -225,17 +225,26 @@ def default_synthetic_set() -> list[Clip]:
 
 def _load_wav_mono(path: Path, sr: int) -> np.ndarray:
     """Load a wav as mono float32 at `sr`. Requires soundfile + scipy."""
+    return _load_wav(path, sr, stereo=False)
+
+
+def _load_wav(path: Path, sr: int, stereo: bool = False) -> np.ndarray:
+    """Load a wav at `sr` as mono [n] (channel mean) or stereo [2, n] (a mono
+    file is duplicated). Requires soundfile + scipy."""
     import soundfile as sf
     from scipy.signal import resample_poly
 
     data, file_sr = sf.read(str(path), dtype="float32", always_2d=True)
-    mono = data.mean(axis=1)
+    if stereo:
+        x = data.T[:2] if data.shape[1] >= 2 else np.repeat(data.T, 2, axis=0)
+    else:
+        x = data.mean(axis=1)
     if file_sr != sr:
         from math import gcd
 
         g = gcd(int(file_sr), int(sr))
-        mono = resample_poly(mono, sr // g, file_sr // g).astype(np.float32)
-    return mono.astype(np.float32)
+        x = resample_poly(x, sr // g, file_sr // g, axis=-1)
+    return np.ascontiguousarray(x, dtype=np.float32)
 
 
 def build_sfx_leak_mix(
@@ -325,15 +334,18 @@ def extract_instrumental_bed(
     more than `vocal_floor_db` below the song itself (and the song is not
     silent), only instruments are playing, so those stretches are a clean
     music bed. Runs shorter than `min_run_s` are dropped; the rest are joined
-    with 20 ms crossfades.
+    with 20 ms crossfades. Mono [n] or stereo [2, n]; detection runs on the
+    channel mean, so a stereo bed's mid is exactly the mono bed.
     """
-    n = min(song.size, vocals.size)
-    song, vocals = song[:n].astype(np.float64), vocals[:n].astype(np.float64)
+    n = min(song.shape[-1], vocals.shape[-1])
+    song = song[..., :n].astype(np.float64)
+    s_mono = song if song.ndim == 1 else song.mean(axis=0)
+    v_mono = (vocals if vocals.ndim == 1 else vocals.mean(axis=0))[:n].astype(np.float64)
     hop = int(0.05 * sr)
     frames = n // hop
-    v_db = 10 * np.log10(np.array([np.mean(vocals[i * hop:(i + 1) * hop] ** 2)
+    v_db = 10 * np.log10(np.array([np.mean(v_mono[i * hop:(i + 1) * hop] ** 2)
                                    for i in range(frames)]) + 1e-12)
-    s_db = 10 * np.log10(np.array([np.mean(song[i * hop:(i + 1) * hop] ** 2)
+    s_db = 10 * np.log10(np.array([np.mean(s_mono[i * hop:(i + 1) * hop] ** 2)
                                    for i in range(frames)]) + 1e-12)
     quiet = (v_db < s_db + vocal_floor_db) & (s_db > s_db.max() - 35.0)
     runs, start = [], None
@@ -342,7 +354,7 @@ def extract_instrumental_bed(
             start = i
         elif not q and start is not None:
             if (i - start) * hop >= min_run_s * sr:
-                runs.append(song[start * hop:i * hop])
+                runs.append(song[..., start * hop:i * hop])
             start = None
     if not runs:
         raise ValueError("no instrumental-only stretch found")
@@ -350,7 +362,8 @@ def extract_instrumental_bed(
     ramp = np.linspace(0.0, 1.0, xf)
     bed = runs[0]
     for r in runs[1:]:
-        bed = np.concatenate([bed[:-xf], bed[-xf:] * (1 - ramp) + r[:xf] * ramp, r[xf:]])
+        bed = np.concatenate([bed[..., :-xf], bed[..., -xf:] * (1 - ramp) + r[..., :xf] * ramp,
+                              r[..., xf:]], axis=-1)
     return bed.astype(np.float32)
 
 
@@ -367,7 +380,9 @@ def build_real_dialogue_mix(
 
     The speech is cut into `phrase_s` phrases separated by `gap_s` of music
     alone (so suppression is measurable). The bed loops to fill the clip and
-    is set `music_rel_db` relative to the speech's active level.
+    is set `music_rel_db` relative to the speech's active level. A stereo
+    [2, n] bed gives a stereo clip with the speech panned centre, as film
+    dialogue is.
     """
     n = int(duration_s * sr)
     out_speech = np.zeros(n, dtype=np.float64)
@@ -382,9 +397,11 @@ def build_real_dialogue_mix(
         pos += ph + gap
         src += ph
     speech_mask = _activity_mask(out_speech, sr, thresh_db=-40.0)
-    music = np.resize(bed.astype(np.float64), n)
+    reps = -(-n // bed.shape[-1])
+    music = np.tile(bed.astype(np.float64), (1,) * (bed.ndim - 1) + (reps,))[..., :n]
     target = _rms(out_speech[speech_mask]) * _db_to_lin(music_rel_db)
     music *= target / _rms(music)
+    out_speech = np.broadcast_to(out_speech, music.shape)
     total = out_speech + music
     peak = float(np.max(np.abs(total)))
     scale = 0.95 / peak if peak > 0.95 else 1.0
@@ -394,28 +411,30 @@ def build_real_dialogue_mix(
         mix=(total * scale).astype(np.float32),
         speech=(out_speech * scale).astype(np.float32),
         music=(music * scale).astype(np.float32),
-        effects=np.zeros(n, dtype=np.float32),
+        effects=np.zeros(music.shape, dtype=np.float32),
         speech_mask=speech_mask,
         music_mask=np.ones(n, dtype=bool),
         effects_mask=np.zeros(n, dtype=bool),
     )
 
 
-def real_dialogue_set(speech_wav, songs, sr: int = SR) -> list[Clip]:
+def real_dialogue_set(speech_wav, songs, sr: int = SR, stereo: bool = False) -> list[Clip]:
     """Tier 3: the same real speech over each real instrumental bed, at a
     typical level (music 8 dB under speech) and a hard one (2 dB under).
 
     `songs` is a list of (song_wav, vocals_wav) pairs; every file must be a
-    wav (convert mp3/m4a with ffmpeg first).
+    wav (convert mp3/m4a with ffmpeg first). stereo=True keeps the songs'
+    stereo beds (clip names end in "_st"); their mid equals the mono clip.
     """
     speech = _load_wav_mono(Path(speech_wav), sr)
+    tag = "_st" if stereo else ""
     clips = []
     for i, (song_wav, vocals_wav) in enumerate(songs, 1):
-        bed = extract_instrumental_bed(_load_wav_mono(Path(song_wav), sr),
+        bed = extract_instrumental_bed(_load_wav(Path(song_wav), sr, stereo),
                                        _load_wav_mono(Path(vocals_wav), sr), sr)
         clips += [
-            build_real_dialogue_mix(speech, bed, f"real{i}_typical", sr, music_rel_db=-8.0),
-            build_real_dialogue_mix(speech, bed, f"real{i}_loud_music", sr, music_rel_db=-2.0),
+            build_real_dialogue_mix(speech, bed, f"real{i}_typical{tag}", sr, music_rel_db=-8.0),
+            build_real_dialogue_mix(speech, bed, f"real{i}_loud_music{tag}", sr, music_rel_db=-2.0),
         ]
     return clips
 
@@ -434,6 +453,6 @@ def write_clip(clip: Clip, out_dir: str | Path) -> dict[str, str]:
         ("effects", clip.effects),
     ):
         p = out / f"{clip.name}_{label}.wav"
-        sf.write(str(p), sig, clip.sr)
+        sf.write(str(p), sig.T if sig.ndim == 2 else sig, clip.sr)
         paths[label] = str(p)
     return paths
