@@ -263,6 +263,10 @@ a = Analysis(
         'keras',
         'spleeter',
         *[f'openvino.frontend.{u}' for u in ('tensorflow', 'pytorch', 'paddle', 'jax')],
+        # GPU compiler for torch.compile; the CPU torch wheel doesn't need it and
+        # `import torch` doesn't load it, but a stray install in the build venv
+        # added ~240 MB to the v0.4.5 bundle.
+        'triton',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -274,6 +278,14 @@ a = Analysis(
 # (e.g. as a dependency of a collected extension); drop those here too.
 a.binaries = [b for b in a.binaries if not _ov_unused(b[1])]
 a.datas = [d for d in a.datas if not _ov_unused(d[1])]
+
+# Same for triton's native libs and torch's test binaries (~270 MB together),
+# which hooks can collect even with the package excluded.
+def _torch_unused(dest):
+    return dest.replace('\\', '/').startswith(('triton/', 'torch/test/'))
+
+a.binaries = [b for b in a.binaries if not _torch_unused(b[0])]
+a.datas = [d for d in a.datas if not _torch_unused(d[0])]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 

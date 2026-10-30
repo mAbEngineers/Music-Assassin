@@ -137,9 +137,11 @@ pip install demucs torch torchaudio pyinstaller
 - **Models are bundled:** Voc_FT, MRX and CDX23 (151 MB) are copied from the build machine's model cache (`~/.cache/music-assassin/models`, or `MA_MODEL_DIR`) into `ma_models/`.
   - The runtime hook points `MA_BUNDLED_MODEL_DIR` there, so the app works offline from the first run.
   - The spec warns, and the bundle downloads on first use, if the cache wasn't warmed.
-- **Size:** about 890 MB on Linux (2026-10-23). The v0.4.5 spec also trims bundle bloat; see commit `e9327e3`.
+- **Size:** the v0.4.5 release bundle is about 1.09 GB on Linux (Windows `.exe` about 590 MB). About 270 MB of that was unused GPU code: `triton` (a stray install in the build venv, not needed by CPU torch) and torch's test binaries. The spec now excludes both (2026-10-30), which should bring the Linux bundle back to roughly 870 MB. Not yet confirmed with a build.
+- **Build off the gvfs/sftp mount:** PyInstaller fails there with `OSError: [Errno 95]`. Set `BUILD_OUT=$HOME/ma_build`.
+- **Build venv needs numpy 2.x** (Windows CI pins 2.4.6); numpy 1.26 is too old for current SciPy and audio-separator.
 - **Check after building:** the app log should say `Fast engine: True (openvino)`. If it says `onnxruntime`, OpenVINO wasn't collected and separation will be roughly 2× slower.
-- **Windows CI** (`.github/workflows/build-windows.yml`) installs openvino and pyloudnorm, warms the models, and fails if the engine isn't on OpenVINO. It still needs a `workflow_dispatch` run for the v0.4.5 build.
+- **Windows CI** (`.github/workflows/build-windows.yml`) installs openvino and pyloudnorm, warms the models, and fails if the engine isn't on OpenVINO. It ran green for the v0.4.5 release.
 
 ### v0.4.2 — Demucs + Spleeter + MDX-Net
 - Includes: PyTorch, Demucs, Spleeter, TensorFlow 2.12, onnxruntime, audio-separator
@@ -240,4 +242,4 @@ Compress-Archive -Path build\output_v0.4.2\dist -DestinationPath Music-Assassin-
 
 ---
 
-*Music-Assassin Build System — v0.4.2 current*
+*Music-Assassin Build System — v0.4.5 current*

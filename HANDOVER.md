@@ -52,7 +52,7 @@ Runs UVR-MDX-NET-Voc_FT on **OpenVINO**: BF16 compute where the CPU supports it 
   - **Warm the cache before building:** `python -c "import fast_separation as f; [f.model_path(k) for k in f._MODELS]"`
 - **Windows CI** installs openvino and pyloudnorm, warms the models, and **fails if the engine isn't on OpenVINO**. The engine's fallback to onnxruntime is silent. **Green for v0.4.5** after a fix: the "Verify the fast engine runs on OpenVINO" step uses `shell: python`, which runs a temp script whose own directory (not the repo root) is on `sys.path`, so `import fast_separation` failed; fixed by setting `env: PYTHONPATH: ${{ github.workspace }}` on that step.
 - **Verified on Linux:**
-  - **Size:** the shipped bundle is ~1.09 GB (the earlier 890 MB figure was before the final model/OpenVINO set; the limit is 2 GB). See §7 Speed for the shrink investigation.
+  - **Size:** the shipped bundle is ~1.09 GB (limit 2 GB). The gap from the earlier 890 MB build is `triton` (~240 MB, a stray install in the build venv; CPU torch doesn't need it) plus torch's test binaries (~29 MB). The spec excludes both since 2026-10-30; not yet confirmed with a build.
   - **Startup:** the built app logs `Fast engine: True (openvino)`.
   - **Engine in a bundle:** a test bundle with the same rules ran all three models from the bundled folder, on OpenVINO BF16, matching the un-frozen run at >129 dB SI-SDR.
 - **App icon (2026-10-30, after v0.4.5).** A dark ink treble clef on an ivory plate, cut once by a thin red line. The piece above the cut lifts away and fades, so the slice still shows at 32 px. The user chose it after several rounds, rejecting a target/scope, blood, two cuts and the live app's waveform as too busy or not distinct enough.
@@ -133,7 +133,7 @@ Runs UVR-MDX-NET-Voc_FT on **OpenVINO**: BF16 compute where the CPU supports it 
 2. **Suspected distortion from the −40 dB per-sample pre-gate** in `audio_prefilter`. It zeroes every sample with |x| < 0.01, which includes every zero-crossing, so I expect crossover distortion on quiet speech. **Not yet measured.** The effects path already skips it (`gate=False`).
 3. **Normal mode applies a 10 kHz low-pass.** The live repo found vocal damage concentrated in the top octave; worth measuring here.
 4. **MRX effects leak audible music** (−21 dB after cleanup). The UI label says "some music bleed".
-5. **Bundle is ~1.09 GB**, above the ~890 MB we'd hoped for. Not a blocker; the shrink is a Speed/size task in §7.
+5. **Bundle is ~1.09 GB.** Cause found and fixed in the spec (see §2.3); needs a build to confirm ~870 MB. **Note:** `~/.venvs/music-assassin` currently has numpy 1.26.4, which mismatches its SciPy 1.18; rebuild needs numpy 2.x (see §5).
 6. **Leftover from the old pipeline:** `separate_with_audio_separator` is still there with its per-chunk peak scaling. It only runs if a user picks the old "MDX-Net" entries.
 
 ---
@@ -160,7 +160,7 @@ onnxruntime/OpenVINO and the Voc_FT model — on an OpenVINO box, not this one.
 | # | Item | Status / note |
 |---|---|---|
 | A2-s | **Overlap 0.25 vs 0.1.** 0.1 is faster; measure whether it costs quality. If not, it's a free speed default. | `--audit a2` covers it. |
-| — | **Shrink the bundle** (~1.09 GB → target ~890 MB; §6.5). Audit what PyInstaller is pulling in — spare OpenVINO frontends/plugins, duplicate torch/cuda libs, unused model copies. Size, not runtime speed, but it's the download cost. | Not started. |
+| — | **Shrink the bundle** (~1.09 GB → ~870 MB; §6.5). | Cause found (triton + torch tests); spec fixed 2026-10-30. Confirm with the next build. |
 | — | **Stereo's speed catch:** DeepFilterNet runs per channel, so stereo roughly doubles its ~12 s and can push "Best" past the 60 s budget for a 10-min clip. Decide: per-channel, or mono-side DeepFilter + stereo re-inject. | Tied to A3. |
 
 ### User-friendliness (how pleasant to use)

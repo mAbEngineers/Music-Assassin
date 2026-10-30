@@ -26,7 +26,7 @@ Labels used below: **measured** (numbers from runs on this machine), **estimate*
 4. **Four realistic routes for live**, cheapest first (details in §4):
    - (a) a music-presence gate;
    - (b) a classifier gate on the residual;
-   - (c) a "movie mode" running MRX with declared latency;
+   - (c) a "movie mode" running MRX with declared latency (dropped 2026-10, see §4.3);
    - (d) distilling a causal student model, with CDX23 as teacher.
 
    The browser look-ahead companion can run the offline models unchanged.
@@ -142,6 +142,8 @@ ROADMAP A4's own unpark route.
 
 ### 4.3 Movie mode: MRX effects path with declared latency (M, needs Q3 and the latency fix)
 
+> **Dropped (2026-10):** the user rejected a 0.5–1.5 s delay even when players are told about it. Live music removal now depends on a small causal model (Track C). Kept below for the record.
+
 **Design** (estimate; nothing here has run in streaming form):
 
 - **Paths:** keep today's dialogue path (`dpdfnet_hr` or `stemgen`) and add an MRX effects path. Both are delayed by one constant D ≈ 0.5–1.5 s.
@@ -211,6 +213,6 @@ These are already measured or reasoned out, in this repo or the live one:
 
 ## 7. Decisions needed before route (c)
 
-1. **ROADMAP Q3, the latency ceiling.** Movie mode needs about 0.5–1.5 s, and is only acceptable once latency is reported correctly.
+1. ~~**ROADMAP Q3, the latency ceiling.**~~ Decided 2026-10: a 0.5–1.5 s delay is not acceptable, so movie mode is dropped (see §4.3).
 2. **Whether "effects under music" matters enough** to pay for route (c) or (d). Routes (a) and (b) keep effects only where music isn't playing.
-3. **CPU budget for an optional mode:** is 2–8 cores acceptable while movie mode is on?
+3. ~~**CPU budget for an optional mode.**~~ Moot now that movie mode is dropped.

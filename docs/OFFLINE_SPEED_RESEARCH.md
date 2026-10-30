@@ -229,7 +229,7 @@ Other runs in the same session:
 
 ## Recommended setup for the offline app
 
-> **Status (2026-10-23):** items 1 and 2 are built and on branch `feat/fast-engine-keep-effects` (`fast_separation.py`, with the separator and "Keep sound effects" options in the app). Effects are offered as an add-on to Best, not as a separate model choice. The automatic recommendation in item 2, and items 3–4, are not built. See `HANDOVER.md` §7.
+> **Status (2026-10-30):** items 1 and 2 shipped in **v0.4.5** (`fast_separation.py`, with the separator and "Keep sound effects" options in the app). Effects are offered as an add-on to Best, not as a separate model choice. The automatic recommendation in item 2, and items 3–4, are not built. See `HANDOVER.md` §7.
 
 1. **Default engine.** Own MDX loop, using OpenVINO with BF16 compute when the CPU supports it, otherwise OpenVINO FP32. Threads = physical cores. Overlap 0.25 for "Best", 0.1 for "Fast".
    - **Desktop CPUs with BF16:** about **35–45 s per 10 min** for separation, with the same output as today.
