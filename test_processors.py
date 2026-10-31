@@ -17,7 +17,7 @@ Usage:
     SKIP_SEPARATORS=1 <venv>/bin/python test_processors.py
 """
 
-import os, sys, gc, time, types, subprocess, tempfile, logging, traceback
+import os, sys, gc, time, types, random, subprocess, tempfile, logging, traceback
 from datetime import datetime
 
 REPO = os.path.dirname(os.path.abspath(__file__))
@@ -441,10 +441,70 @@ def test_stereo_fast_engine():
     fx = app.fast_separation.separate_dme(st, "mrx", sr, want=("effects",))["effects"]
     assert fx.shape == st.shape
 
+def test_stereo_legacy():
+    st, sr = _stereo_clip()
+    seps = []
+    if app.DEMUCS_AVAILABLE:
+        app.model_choice, app.quantize_enabled = "htdemucs", True
+        def demucs(w):
+            random.seed(0)   # apply_model's shifts=1 offsets the input at random
+            return app.separate_with_demucs(w, sr)
+        seps.append(("DEMUCS htdemucs", demucs))
+    if app.AUDIO_SEPARATOR_AVAILABLE:
+        seps.append(("MDX-Net Voc_FT", lambda w: app.separate_with_audio_separator(
+            w, sr, mdl="UVR-MDX-NET-Voc_FT.onnx")))
+    if not seps or ram_guard("stereo legacy separators"):
+        return "skip"
+    x = st[0]
+    for name, sep in seps:
+        out = sep(st)
+        assert out is not None and out.shape == st.shape, name
+        # Mono is fed to these stereo models as dual mono, so dual-mono
+        # stereo averaged back must match the mono path
+        dual, mono = sep(np.stack([x, x])), sep(x)
+        err = float(np.abs(dual.mean(axis=0) - mono).max())
+        _log.info(f"  {name}: stereo {out.shape}, dual-mono vs mono max diff {err:.1e}")
+        assert err < 1e-3, name
+        app._MODEL_CACHE.clear()        # one model in RAM at a time
+        app._AUDIO_SEP_CACHE.clear()
+        gc.collect()
+
+def test_stereo_spleeter_plumbing():
+    # A stand-in with Spleeter's contract: (n, 1) or (n, 2) in, mono
+    # duplicated, (n, 2) out. 130 s spans three 60 s chunks, so the
+    # overlap-add runs too; vocals = half the input must come back exactly.
+    class _Stub:
+        def __init__(self, *a, **kw): pass
+        def separate(self, w):
+            w = np.tile(w, (1, 2)) if w.shape[-1] == 1 else w
+            return {"vocals": w * 0.5, "other": w * 0.5}
+        def close(self): pass
+    mod = types.ModuleType("spleeter.separator")
+    mod.Separator = _Stub
+    saved = {k: sys.modules.get(k) for k in ("spleeter", "spleeter.separator")}
+    sys.modules.update({"spleeter": types.ModuleType("spleeter"), "spleeter.separator": mod})
+    avail, app.SPLEETER_AVAILABLE = app.SPLEETER_AVAILABLE, True
+    try:
+        st, sr = _stereo_clip()
+        st = np.tile(st, (1, 13))
+        for w in (st, st[0]):
+            out = app.separate_with_spleeter(w, sr)
+            assert out is not None and out.shape == w.shape
+            assert np.allclose(out, w * 0.5, atol=1e-6)
+    finally:
+        app.SPLEETER_AVAILABLE = avail
+        for k, v in saved.items():
+            if v is None:
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = v
+
 run("stereo DSP  (prefilter, VAD, post-process, effects mix keep [2, n])", test_stereo_dsp)
 run("stereo gain transfer  (identity within 1e-4)",                    test_stereo_transfer)
 run("stereo enhancer  (DeepFilterNet, mid and per-channel)",            test_stereo_enhancer)
 run("stereo fast engine  (Voc_FT stereo, dual-mono == mono, MRX fx)",   test_stereo_fast_engine)
+run("stereo legacy separators  (DEMUCS, MDX-Net: [2, n] out, dual-mono == mono)", test_stereo_legacy)
+run("stereo Spleeter plumbing  (stand-in model, 3 chunks, stereo and mono)",     test_stereo_spleeter_plumbing)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

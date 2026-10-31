@@ -21,9 +21,9 @@ Arrays are mono `[n]` or stereo `[2, n]`; the pipeline branches on shape.
 | CDX23 (keep-effects, quality) | Runs on the mid. `_share_stems()` then gives each channel's STFT each stem's share of the mid's spectrum | CDX23 is trained on DnR, which is mono. Fed real stereo it leaked 10 dB more music and still returned mono |
 | DeepFilterNet and the other enhancers | `stereo_enhance="mid"`: enhance the mid once, then apply its time-frequency gain to each channel (`_transfer_gain`). `"per_channel"` is kept as an option | Same quality as per channel, at about a quarter of the extra cost |
 | VAD gate | Detects on the mid; one mask for both channels | |
-| Legacy separators (audio-separator, Demucs, Spleeter) | Mono, on the mid | Unchanged paths. With keep-effects on, the effects mixed back in are still stereo |
+| Legacy separators (audio-separator, Demucs, Spleeter) | Fed real L/R | Their models are all stereo, and mono was being fed to them duplicated. Mono input still takes the old path: dual mono in, the two outputs averaged |
 
-**Memory.** Stereo is skipped, with a log line, when there isn't enough free memory (`_stereo_fits`). Measured peak RSS with Voc_FT, MRX effects, DeepFilterNet and VAD:
+**Memory.** Stereo is skipped when there isn't enough free memory (`_stereo_fits`). The log says so, the file's line in the queue's done list gets "(mono: low memory)", and the final status line counts such files. Measured peak RSS with Voc_FT, MRX effects, DeepFilterNet and VAD:
 
 | | Peak RSS |
 |---|---|
@@ -32,7 +32,7 @@ Arrays are mono `[n]` or stereo `[2, n]`; the pipeline branches on shape.
 
 The rule is: stereo needs three stereo copies of the track plus 3 GB free. For a 2-hour film that is about 10.6 GB.
 
-`stereo_output = False` forces the old mono behaviour. There is no UI switch yet.
+The "Stereo output" checkbox in the Processing Mode card (`stereo_output`, on by default) turns stereo off; mono is then the old behaviour exactly.
 
 ## Measurements
 
@@ -106,8 +106,17 @@ Under load (about 28), the full Best + MRX-effects chain went from 97 s to 118 s
 - **MKV exports are 1024 samples (23 ms) late.** This is AAC encoder priming, and MKV doesn't compensate for it; M4A does (lag 0). It affects mono output exactly the same way, so it predates A3. It is below the usual lip-sync threshold, but it is a free fix if anyone touches export.
 - **The A2 "SFX-leak clip" was synthetic.** `build_sfx_leak_mix()` without arguments synthesises both the bed and the effects. `docs/A2_AUDIT_RESULTS.md` is corrected. The stereo clip above is the real-audio version.
 
+## Follow-up: UI switch and the legacy separators (2026-10-31)
+
+- **Switch.** The checkbox above. Turning it off gives the old mono output; the memory fallback still applies when it is on, and is now visible in the queue and status line rather than only in the log.
+- **Demucs, audio-separator (MDX-Net) and Spleeter take `[2, n]`.** Each is chunked along the last axis and keeps both output channels. With mono input each still averages the model's two outputs, so the mono path is unchanged; `test_processors.py` checks dual-mono stereo against mono: identical for Demucs (its random shift seeded) and MDX-Net. End to end through `_process_single_track` on the stereo episode excerpt, all three cases (Demucs, Demucs + MRX effects, MDX-Net) export stereo, at 13-23 s for 53 s of audio in a fresh process (peak 1.5-4.3 GB); Demucs alone runs as fast in stereo as in mono.
+- **Two bugs found on the way, both predating A3:**
+  - **Spleeter never produced output.** Spleeter returns `(n, 2)` even for mono input, and the app flattened it to `2n` samples, so the first chunk's assignment raised and the function returned None. Spleeter isn't installed in the test venv, so this is covered by a stand-in model with Spleeter 2.4.2's input/output contract (130 s, three chunks, stereo and mono), not the real model.
+  - **MDX-Net failed on every run after the first in a session.** audio-separator copies `output_dir` into the loaded model at load time, so redirecting only `Separator.output_dir` for the cached instance left the model writing into the first run's temp folder; the app then looked in the new one and returned None. In a batch, every file after the first failed. Both are now redirected.
+- **Tests:** 20 passed, 1 skipped (real Spleeter, not installed), 0 failed.
+- **Memory caveat (predates A3):** every model loaded in a session stays cached, so switching separators back and forth adds them up. Under a 6.5 GB cap, one process that had run Demucs, MRX, DeepFilterNet and MDX-Net in turn slowed to a crawl on the stereo cases; each case alone was normal.
+- **Shared venv note.** audio-separator imports `onnx2torch`, which imports torchvision. The shared venv has PyPI's CUDA torchvision 0.29.1 next to CPU-only torch 2.14.1, so `torchvision::nms` is missing and MDX-Net can't load there. The tests above ran with `torchvision==0.29.1+cpu` in a scratch overlay venv; the shared venv is untouched.
+
 ## Open
 
-- **A UI switch for stereo/mono.** Today `_stereo_fits` decides automatically. A user with a large file on a small machine gets mono, with a log line and no visible notice.
-- **The legacy separators** could take real stereo too: Demucs `htdemucs` is a stereo model fed `[chunk, chunk]`. This is low priority, because the fast engine is the default.
 - **A listening check** of stereo effects on a full episode.

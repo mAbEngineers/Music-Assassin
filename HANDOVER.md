@@ -152,7 +152,7 @@ overlay-venv workaround for the shared venv's numpy/SciPy mismatch.
 
 | # | Item | Status / note |
 |---|---|---|
-| A3 | **Stereo output** (§6.1). | **Done 2026-10-31**, `docs/A3_STEREO_RESULTS.md`. Quality-neutral for centred dialogue; kept effects keep their stereo image. CDX23 runs on the mid with stem-share transfer (fed real stereo it leaked 10 dB more). Falls back to mono when RAM is short; no UI switch yet. |
+| A3 | **Stereo output** (§6.1). | **Done 2026-10-31**, `docs/A3_STEREO_RESULTS.md`. Quality-neutral for centred dialogue; kept effects keep their stereo image. CDX23 runs on the mid with stem-share transfer (fed real stereo it leaked 10 dB more). Falls back to mono when RAM is short, shown next to the file in the queue. Follow-up: a Stereo output checkbox; DEMUCS, MDX-Net and Spleeter are stereo too; fixed Spleeter never producing output and MDX-Net failing on every file after the first in a session. |
 | A2-q | **Audit the quality-shaping stages:** the −40 dB pre-gate (§6.2), the Normal-mode 10 kHz low-pass (§6.3), DeepFilterNet, the VAD gate. | **Done 2026-10-30**, `docs/A2_AUDIT_RESULTS.md`. Pre-gate removed (destroyed dialogue in quiet files, bought nothing at normal level). DeepFilterNet helps (+1.2 to +2.2 dB contrast, no dialogue damage). VAD a small help. Low-pass and Balanced EQ are listening-session calls, defaults unchanged. |
 | A4 | **"Music level" control** — add the removed music back at −20 / −12 dB instead of deleting it. A gentle mixback hides separation artefacts and sounds more natural than a hard cut. | Harness has `--audit a4` to find the level. UI is the user-friendliness half (A4-ui). |
 

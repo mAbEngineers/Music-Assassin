@@ -631,6 +631,8 @@ def separate_with_demucs(waveform, sr=44100):
     htdemucs_ft and mdx_extra are both BagOfModels with 4 sub-models — they
     collapsed on long files because the whole-file tensor was in RAM the whole
     time. Chunking fixes that: each chunk is processed and freed individually.
+    The models are stereo: [2, n] in gives [2, n] out, and mono [n] is fed as
+    dual mono and averaged back.
     """
     if not DEMUCS_AVAILABLE:
         print("ERROR: DEMUCS not available")
@@ -670,7 +672,7 @@ def separate_with_demucs(waveform, sr=44100):
             print(f"  TIP: Install CUDA + PyTorch-GPU for 10-20x speedup.")
 
         vocals_idx = model.sources.index('vocals')
-        duration_s = len(waveform) / sr
+        duration_s = waveform.shape[-1] / sr
 
         # Manual pre-chunking — keeps peak RAM bounded for all model sizes.
         # htdemucs_ft / mdx_extra are 4-model bags: without this they load the
@@ -681,10 +683,10 @@ def separate_with_demucs(waveform, sr=44100):
         overlap_samp = int(OVERLAP_SEC * sr)
         step_samp   = chunk_samp - overlap_samp
 
-        total_samp  = len(waveform)
+        total_samp  = waveform.shape[-1]
         starts      = list(range(0, total_samp, step_samp))
         n_chunks    = len(starts)
-        vocals_out  = np.zeros(total_samp, dtype=np.float32)
+        vocals_out  = np.zeros(waveform.shape[:-1] + (total_samp,), dtype=np.float32)
 
         print(f"  duration: {duration_s:.1f}s  |  chunks: {n_chunks} × {CHUNK_SEC}s  |  overlap: {OVERLAP_SEC}s  |  device: {dev}")
 
@@ -696,9 +698,9 @@ def separate_with_demucs(waveform, sr=44100):
 
         for idx, start in enumerate(starts):
             end   = min(start + chunk_samp, total_samp)
-            chunk = waveform[start:end]
+            chunk = waveform[..., start:end]
 
-            stereo = np.stack([chunk, chunk], axis=0)
+            stereo = np.ascontiguousarray(chunk) if chunk.ndim == 2 else np.stack([chunk, chunk], axis=0)
             t = from_numpy(stereo).float().unsqueeze(0).to(dev)
             if use_fp16:
                 t = t.half()
@@ -756,21 +758,22 @@ def separate_with_demucs(waveform, sr=44100):
             if _err[0]:
                 raise _err[0]
 
-            chunk_vocals = _result[0][0, vocals_idx].float().mean(0).cpu().numpy()
+            chunk_vocals = _result[0][0, vocals_idx].float()
+            chunk_vocals = (chunk_vocals if chunk.ndim == 2 else chunk_vocals.mean(0)).cpu().numpy()
             del _result[0], t, stereo
 
             # Overlap-add: crossfade the overlap region with the previous chunk
             if idx == 0:
-                vocals_out[start:end] = chunk_vocals
+                vocals_out[..., start:end] = chunk_vocals
             else:
-                fade_len = min(overlap_samp, len(chunk_vocals), end - start)
+                fade_len = min(overlap_samp, chunk_vocals.shape[-1], end - start)
                 fade_in  = np.linspace(0.0, 1.0, fade_len, dtype=np.float32)
                 fade_out = 1.0 - fade_in
-                vocals_out[start:start + fade_len] = (
-                    vocals_out[start:start + fade_len] * fade_out +
-                    chunk_vocals[:fade_len] * fade_in
+                vocals_out[..., start:start + fade_len] = (
+                    vocals_out[..., start:start + fade_len] * fade_out +
+                    chunk_vocals[..., :fade_len] * fade_in
                 )
-                vocals_out[start + fade_len:end] = chunk_vocals[fade_len:end - start]
+                vocals_out[..., start + fade_len:end] = chunk_vocals[..., fade_len:end - start]
 
             del chunk_vocals, chunk
             if dev.type == "cuda":
@@ -797,6 +800,8 @@ def separate_with_spleeter(waveform, sr=44100):
     Spleeter loads the entire waveform into TensorFlow at once and expands it
     to ~400-800 MB of tensors. Without chunking, long files OOM. We split into
     60s chunks, run Spleeter on each, and overlap-add the vocals back.
+    Spleeter takes and returns (n, 2) -- mono input is duplicated -- so [2, n]
+    in gives [2, n] out, and mono [n] gets the average of its two outputs.
     """
     if not SPLEETER_AVAILABLE:
         print("ERROR: Spleeter not available")
@@ -828,10 +833,10 @@ def separate_with_spleeter(waveform, sr=44100):
         overlap_samp = int(OVERLAP_SEC * sr)
         step_samp    = chunk_samp - overlap_samp
 
-        total_samp   = len(waveform)
+        total_samp   = waveform.shape[-1]
         starts       = list(range(0, total_samp, step_samp))
         n_chunks     = len(starts)
-        vocals_out   = np.zeros(total_samp, dtype=np.float32)
+        vocals_out   = np.zeros(waveform.shape[:-1] + (total_samp,), dtype=np.float32)
 
         duration_s = total_samp / sr
         print(f"  duration: {duration_s:.1f}s  |  chunks: {n_chunks} × {CHUNK_SEC}s  |  overlap: {OVERLAP_SEC}s")
@@ -842,7 +847,8 @@ def separate_with_spleeter(waveform, sr=44100):
 
         for idx, start in enumerate(starts):
             end   = min(start + chunk_samp, total_samp)
-            chunk = waveform[start:end].reshape(-1, 1)
+            chunk = waveform[..., start:end]
+            chunk = chunk.T if chunk.ndim == 2 else chunk.reshape(-1, 1)
 
             update_status(f"Spleeter: chunk {idx+1}/{n_chunks}...")
 
@@ -852,19 +858,20 @@ def separate_with_spleeter(waveform, sr=44100):
                 _sep_result[0] = separator.separate(c)
 
             _run_in_background(_run_sep, f"Spleeter: chunk {idx+1}/{n_chunks}...")
-            chunk_vocals = _sep_result[0]['vocals'].flatten()
+            chunk_vocals = np.asarray(_sep_result[0]['vocals'], dtype=np.float32)
+            chunk_vocals = chunk_vocals.T if waveform.ndim == 2 else chunk_vocals.mean(axis=1)
 
             if idx == 0:
-                vocals_out[start:end] = chunk_vocals
+                vocals_out[..., start:end] = chunk_vocals
             else:
-                fade_len = min(overlap_samp, len(chunk_vocals), end - start)
+                fade_len = min(overlap_samp, chunk_vocals.shape[-1], end - start)
                 fade_in  = np.linspace(0.0, 1.0, fade_len, dtype=np.float32)
                 fade_out = 1.0 - fade_in
-                vocals_out[start:start + fade_len] = (
-                    vocals_out[start:start + fade_len] * fade_out +
-                    chunk_vocals[:fade_len] * fade_in
+                vocals_out[..., start:start + fade_len] = (
+                    vocals_out[..., start:start + fade_len] * fade_out +
+                    chunk_vocals[..., :fade_len] * fade_in
                 )
-                vocals_out[start + fade_len:end] = chunk_vocals[fade_len:end - start]
+                vocals_out[..., start + fade_len:end] = chunk_vocals[..., fade_len:end - start]
 
             del chunk_vocals, chunk, _sep_result[0]
             gc.collect()
@@ -893,7 +900,8 @@ def separate_with_audio_separator(waveform, sr=44100, mdl="UVR-MDX-NET-Voc_FT.on
     stays bounded regardless of file length — the model processes one chunk at
     a time instead of the entire track.
     The Separator instance is cached per model so batch runs don't reload
-    weights each time.
+    weights each time. The MDX-Net models are stereo: [2, n] in gives [2, n]
+    out, and mono [n] gets the average of the two output channels.
     """
     if not AUDIO_SEPARATOR_AVAILABLE:
         print("ERROR: audio-separator not installed. Run: pip install audio-separator onnxruntime")
@@ -909,8 +917,9 @@ def separate_with_audio_separator(waveform, sr=44100, mdl="UVR-MDX-NET-Voc_FT.on
         base_tmp = tempfile.mkdtemp(prefix="music_assassin_mdx_")
 
         # Load (or reuse cached) Separator — always point at base_tmp.
-        # We do NOT update output_dir per chunk: audio-separator ignores
-        # dynamic reassignment and always writes to the dir set at init time.
+        # The loaded model keeps its own copy of output_dir from load time,
+        # so a reused Separator needs both redirected; otherwise every run
+        # after the first writes into the first run's dir and returns None.
         sep = _AUDIO_SEP_CACHE.get(mdl)
         if sep is None:
             sep = Separator(
@@ -925,6 +934,8 @@ def separate_with_audio_separator(waveform, sr=44100, mdl="UVR-MDX-NET-Voc_FT.on
         else:
             # Redirect output to this run's base_tmp
             sep.output_dir = base_tmp
+            if getattr(sep, "model_instance", None) is not None:
+                sep.model_instance.output_dir = base_tmp
             print(f"  MDX-Net model '{mdl}' reused from cache")
 
         # ── Chunked separation ──────────────────────────────────────────────
@@ -937,17 +948,17 @@ def separate_with_audio_separator(waveform, sr=44100, mdl="UVR-MDX-NET-Voc_FT.on
         overlap_samp = int(OVERLAP_SEC * sr)
         step_samp    = chunk_samp - overlap_samp
 
-        total_samp   = len(waveform)
+        total_samp   = waveform.shape[-1]
         starts       = list(range(0, total_samp, step_samp))
         n_chunks     = len(starts)
-        vocals_out   = np.zeros(total_samp, dtype=np.float32)
+        vocals_out   = np.zeros(waveform.shape[:-1] + (total_samp,), dtype=np.float32)
         duration_s   = total_samp / sr
 
         print(f"  duration: {duration_s:.1f}s  |  chunks: {n_chunks} × {CHUNK_SEC}s  |  overlap: {OVERLAP_SEC}s")
 
         for idx, start in enumerate(starts):
             end   = min(start + chunk_samp, total_samp)
-            chunk = waveform[start:end]
+            chunk = waveform[..., start:end]
             chunk_dur = (end - start) / sr
 
             update_status(f"MDX-Net: chunk {idx+1}/{n_chunks}  ({chunk_dur:.0f}s)...")
@@ -955,7 +966,7 @@ def separate_with_audio_separator(waveform, sr=44100, mdl="UVR-MDX-NET-Voc_FT.on
 
             # Write chunk with a unique name so we can identify its output
             tmp_in = os.path.join(base_tmp, f"chunk_{idx:04d}.wav")
-            sf.write(tmp_in, chunk.astype(np.float32), sr)
+            sf.write(tmp_in, chunk.T.astype(np.float32), sr)   # (frames, channels)
 
             # Capture output filenames from sep.separate() return value
             _sep_out = [None]
@@ -989,23 +1000,25 @@ def separate_with_audio_separator(waveform, sr=44100, mdl="UVR-MDX-NET-Voc_FT.on
                 continue
 
             chunk_voc, out_sr = sf.read(vocals_files[0], dtype='float32')
-            if chunk_voc.ndim > 1:
+            if waveform.ndim == 2:
+                chunk_voc = chunk_voc.T if chunk_voc.ndim > 1 else np.stack([chunk_voc] * 2)
+            elif chunk_voc.ndim > 1:
                 chunk_voc = chunk_voc.mean(axis=1)
 
             # Overlap-add
-            chunk_len = min(len(chunk_voc), end - start)
+            chunk_len = min(chunk_voc.shape[-1], end - start)
             if idx == 0:
-                vocals_out[start:start + chunk_len] = chunk_voc[:chunk_len]
+                vocals_out[..., start:start + chunk_len] = chunk_voc[..., :chunk_len]
             else:
                 fade_len = min(overlap_samp, chunk_len)
                 fade_in  = np.linspace(0.0, 1.0, fade_len, dtype=np.float32)
                 fade_out = 1.0 - fade_in
-                vocals_out[start:start + fade_len] = (
-                    vocals_out[start:start + fade_len] * fade_out +
-                    chunk_voc[:fade_len] * fade_in
+                vocals_out[..., start:start + fade_len] = (
+                    vocals_out[..., start:start + fade_len] * fade_out +
+                    chunk_voc[..., :fade_len] * fade_in
                 )
                 if chunk_len > fade_len:
-                    vocals_out[start + fade_len:start + chunk_len] = chunk_voc[fade_len:chunk_len]
+                    vocals_out[..., start + fade_len:start + chunk_len] = chunk_voc[..., fade_len:chunk_len]
 
             del chunk_voc, chunk
             # Remove processed chunk files from base_tmp
@@ -1839,9 +1852,12 @@ def _stereo_fits(duration):
     need = 3 * duration * sample_rate * 4 * 2 + 3e9
     if avail >= need:
         return True
-    print(f"  Not enough free memory for stereo ({avail / 1e9:.1f} GB free, "
+    print(f"WARNING: not enough free memory for stereo ({avail / 1e9:.1f} GB free, "
           f"~{need / 1e9:.1f} GB needed) -- processing in mono")
     return False
+
+# Names of the files that fell back to mono this run, for the status line.
+_mono_fallbacks = []
 
 
 def _process_single_track(file_path, input_, track_idx, output_path, video, audio_streams, sub_count=0, duration=0):
@@ -1852,7 +1868,10 @@ def _process_single_track(file_path, input_, track_idx, output_path, video, audi
     # Stereo when the source has two or more channels (ffmpeg downmixes
     # surround), unless there isn't the memory for it -- see _stereo_fits().
     src_ch = next((t.get('channels', 1) for t in audio_streams if t['index'] == track_idx), 1)
-    n_ch = 2 if stereo_output and src_ch >= 2 and _stereo_fits(duration) else 1
+    n_ch = 2 if stereo_output and src_ch >= 2 else 1
+    if n_ch == 2 and not _stereo_fits(duration):
+        n_ch = 1
+        _mono_fallbacks.append(os.path.basename(output_path))
 
     print(f"  Extracting track a:{track_idx} ({'stereo' if n_ch == 2 else 'mono'})...")
     update_status(f"Extracting audio (track {track_idx})...")
@@ -1940,20 +1959,19 @@ def _process_single_track(file_path, input_, track_idx, output_path, video, audi
         else:
             vocals = fast_separation.separate_dme(waveform, "mrx", sample_rate, want=("dialogue",),
                                                   progress=_sep_progress)["dialogue"]
-    # The legacy separators are mono paths: they get the mid, and their mono
-    # dialogue is still mixed with stereo effects if keep-effects is on.
+    # The legacy separators' models are all stereo, so they take [2, n] as is.
     elif separator_choice == 'audio_separator' and AUDIO_SEPARATOR_AVAILABLE:
-        vocals = separate_with_audio_separator(_mid(waveform), sample_rate, model_choice)
+        vocals = separate_with_audio_separator(waveform, sample_rate, model_choice)
     elif separator_choice == 'demucs' and DEMUCS_AVAILABLE:
-        vocals = separate_with_demucs(_mid(waveform), sample_rate)
+        vocals = separate_with_demucs(waveform, sample_rate)
     elif separator_choice == 'spleeter' and SPLEETER_AVAILABLE:
-        vocals = separate_with_spleeter(_mid(waveform), sample_rate)
+        vocals = separate_with_spleeter(waveform, sample_rate)
     elif DEMUCS_AVAILABLE:
         print("WARNING: Falling back to DEMUCS")
-        vocals = separate_with_demucs(_mid(waveform), sample_rate)
+        vocals = separate_with_demucs(waveform, sample_rate)
     elif SPLEETER_AVAILABLE:
         print("WARNING: Falling back to Spleeter")
-        vocals = separate_with_spleeter(_mid(waveform), sample_rate)
+        vocals = separate_with_spleeter(waveform, sample_rate)
     else:
         print("No separator available")
         return False
@@ -2126,7 +2144,7 @@ def demusic_pro(file_path):
 
 def setFrames(root):
     """Compact formal dark GUI"""
-    global b1, b2, inprogressframe, listbox, f1, a1, progress, status_label, mode_selector, separator_selector, quantize_var, vad_var, df_var, enh_selector, ov_var, tgate_var, fx_selector, fx_level_selector
+    global b1, b2, inprogressframe, listbox, f1, a1, progress, status_label, mode_selector, separator_selector, quantize_var, vad_var, df_var, enh_selector, ov_var, tgate_var, fx_selector, fx_level_selector, stereo_var
 
     BG      = '#0d0d14'
     CARD    = '#14141f'
@@ -2233,7 +2251,13 @@ def setFrames(root):
     mode_selector.pack(fill="x", padx=10, pady=(0, 3))
     mode_selector.bind("<<ComboboxSelected>>", lambda e: set_mode())
     Label(mode_card, text="60-70%  \u2022  75-85%  \u2022  90-95% removal",
-          font=("Segoe UI", 7), bg=CARD, fg=MUTED).pack(anchor="w", padx=10, pady=(0, 7))
+          font=("Segoe UI", 7), bg=CARD, fg=MUTED).pack(anchor="w", padx=10, pady=(0, 2))
+    stereo_var = BooleanVar(value=stereo_output)
+    Checkbutton(mode_card, text="Stereo output  (mono if memory is short)",
+                variable=stereo_var, command=set_stereo,
+                bg=CARD, fg=TEXT, selectcolor=CARD, activebackground=CARD,
+                activeforeground=ACCENT, highlightthickness=0,
+                font=("Segoe UI", 7)).pack(anchor="w", padx=8, pady=(0, 7))
 
     # ── ENHANCEMENT ──────────────────────────────────────────────────────────
     enh_card = mk_card(root)
@@ -2509,6 +2533,12 @@ def set_transient_gate():
     print(f"Transient gate: {transient_gate_enabled}")
     update_status(f"Transient gate: {'ON' if transient_gate_enabled else 'OFF'}")
 
+def set_stereo():
+    global stereo_output
+    stereo_output = bool(stereo_var.get())
+    print(f"Stereo output: {stereo_output}")
+    update_status(f"Output: {'stereo (stereo sources)' if stereo_output else 'mono'}")
+
 def set_mode():
     """Update processing mode"""
     global processing_mode
@@ -2576,6 +2606,7 @@ def demusic_list():
     do = 1
     completed = []
     failed = []
+    mono = []
     update_status(f"Processing {len(files)} file(s)...")
 
     def process_next():
@@ -2584,7 +2615,8 @@ def demusic_list():
             if not files:
                 do = 0
                 print(f"\n=== COMPLETE ===\nProcessed: {len(completed)}\nFailed: {len(failed)}")
-                update_status(f"Complete \u2014 {len(completed)} processed, {len(failed)} failed")
+                note = f", {len(mono)} in mono (low memory)" if mono else ""
+                update_status(f"Complete \u2014 {len(completed)} processed, {len(failed)} failed{note}")
             return
 
         file_path = files.pop(0)
@@ -2595,11 +2627,16 @@ def demusic_list():
         print(f"\nProcessing: {filename}")
         update_status(f"Processing: {filename}")
 
+        n_fallbacks = len(_mono_fallbacks)
         success = demusic_pro(file_path)
+        fell_back = len(_mono_fallbacks) > n_fallbacks
+        if fell_back:
+            mono.append(filename)
 
         if success:
             completed.append(filename)
-            Label(inprogressframe, text=f"  \u2713  {filename}",
+            Label(inprogressframe, text=f"  \u2713  {filename}"
+                                        f"{'   (mono: low memory)' if fell_back else ''}",
                  font=("Segoe UI", 8), bg='#071a0f', fg='#4ade80',
                  anchor="w", pady=2).pack(fill="x", pady=1)
         else:
