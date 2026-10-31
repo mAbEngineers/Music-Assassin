@@ -1,0 +1,38 @@
+name: Tests
+
+# The checks that need no model weights, no GPU and no sample media: the
+# mixing and limiter maths, saved settings, model-cache clean-up, the MKV
+# audio-delay premise, the quality harness self-check, and a smoke test that
+# builds the real window under a virtual display. The model-heavy suites
+# (test_processors.py, quality_harness audits) stay manual: they need the
+# weights and a sample video.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: System packages (FFmpeg, virtual display, Tk)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg xvfb tk fonts-dejavu-core
+
+      - name: Python packages
+        # Only what the app imports at start-up. torch, OpenVINO and the
+        # separation models are deliberately not installed: the app has to
+        # start and its window has to build without them.
+        run: pip install "numpy>=2.0.0" "scipy>=1.5.0" "soundfile>=0.12.0" "ffmpeg-python>=0.2.0" "psutil>=5.9.0"
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
