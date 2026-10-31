@@ -35,12 +35,18 @@ echo ""
 echo "[2/4] Installing Python packages..."
 "$PIP" install --upgrade pip -q
 
+# torch, torchaudio and torchvision together, from one index, before anything
+# that pulls them in. torchvision otherwise arrives from PyPI through
+# audio-separator (onnx2torch) as a CUDA build, which next to a CPU torch
+# fails with "operator torchvision::nms does not exist" and MDX-Net can't load.
+# CPU by default; for a GPU set TORCH_INDEX, e.g. .../whl/cu121.
+TORCH_INDEX="${TORCH_INDEX:-https://download.pytorch.org/whl/cpu}"
+"$PIP" install torch torchaudio torchvision --index-url "$TORCH_INDEX" -q
+
 # Core separation + ML
 "$PIP" install \
     "demucs>=4.0.0" \
     "audio-separator>=0.17" \
-    "torch>=2.0.0" \
-    "torchaudio>=2.0.0" \
     "numpy>=2.0.0" \
     "scipy>=1.5.0" \
     "soundfile>=0.12.0" \

@@ -30,4 +30,8 @@ ffmpeg-python>=0.2.1
 #     Kim_Vocal_2.onnx         — best CPU quality, ~130 MB
 # - Models download automatically on first use.
 # - For GPU: replace onnxruntime with onnxruntime-gpu (CUDA).
+# - audio-separator pulls in torch and torchvision (via onnx2torch). Install them first,
+#   together, from one index, or a PyPI CUDA torchvision next to a CPU torch fails with
+#   "operator torchvision::nms does not exist":
+#     pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 # - List all available models: `audio-separator --list_models`

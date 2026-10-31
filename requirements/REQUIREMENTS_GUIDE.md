@@ -1,4 +1,4 @@
-# Requirements Files Guide - Music-Assassin v0.4.1
+# Requirements Files Guide - Music-Assassin v0.4.5
 
 This directory contains multiple requirements files optimized for different use cases and setups.
 
@@ -25,11 +25,11 @@ Best balance of quality, speed, and compatibility.
 pip install -r requirements.txt
 ```
 
-For v0.4.4, `setup_v044.sh` is the tested route. `requirements.txt` now includes **openvino** (the fast separation engine; without it the engine falls back to onnxruntime, at 2× or more slower) and **pyloudnorm**.
+For v0.4.4, `setup_v044.sh` is the tested route. Installing by hand, put torch, torchaudio and torchvision in first, together, from one index (CPU: `pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cpu`); see Troubleshooting for why. `requirements.txt` now includes **openvino** (the fast separation engine; without it the engine falls back to onnxruntime, at 2× or more slower) and **pyloudnorm**.
 
 Or with GPU support:
 ```bash
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118
+pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu118
 pip install -r requirements.txt
 ```
 
@@ -130,9 +130,12 @@ For historical context:
 - **v0.3.0-0.3.1**: Stream handling improvements
 - **v0.3.2**: Chunked processing, Spleeter 4-stems
 - **v0.3.3**: Harmonic rejection filters, DSP pipeline
-- **v0.3.4**: YouTube support (experimental)
+- **v0.3.4**: YouTube support (experimental; the current app has no URL input)
 - **v0.4.0**: DEMUCS introduction
-- **v0.4.1**: DEMUCS/Spleeter hybrid **(Current)**
+- **v0.4.1**: DEMUCS/Spleeter hybrid
+- **v0.4.2**: MDX-Net (UVR) via audio-separator
+- **v0.4.4**: VAD gate, DeepFilterNet and other enhancers
+- **v0.4.5**: fast engine (OpenVINO), keep sound effects (MRX / CDX23) **(Current)**
 
 See `requirements_by_version.txt` for specific dependencies per version.
 
@@ -144,7 +147,7 @@ See `requirements_by_version.txt` for specific dependencies per version.
 
 ```bash
 # Install PyTorch with CUDA 11.8 support
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118
+pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu118
 
 # Then install rest of requirements
 pip install -r requirements.txt
@@ -156,7 +159,7 @@ pip install -r requirements.txt
 
 ```bash
 # Install PyTorch with ROCm support
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/rocm5.7
+pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/rocm5.7
 
 # Then install rest of requirements
 pip install -r requirements.txt
@@ -165,20 +168,13 @@ pip install -r requirements.txt
 ### For Apple Silicon (MPS)
 
 ```bash
-pip install torch torchaudio
+pip install torch torchaudio torchvision
 pip install -r requirements.txt
 ```
 
 ---
 
 ## Optional Dependencies
-
-### YouTube Support
-Uncomment in any requirements file or install separately:
-
-```bash
-pip install yt-dlp>=2024.1.0
-```
 
 ### Development & Testing
 ```bash
@@ -195,6 +191,17 @@ Install PyTorch separately:
 pip install torch torchaudio
 ```
 
+### "operator torchvision::nms does not exist" (MDX-Net won't load)
+torchvision is a different build from torch: usually a CPU torch with PyPI's CUDA
+torchvision, which audio-separator pulls in through onnx2torch. Reinstall it from
+torch's index (CPU shown; use your CUDA index for a GPU torch):
+```bash
+pip install --force-reinstall --no-deps torchvision --index-url https://download.pytorch.org/whl/cpu
+```
+Pick the torchvision release that pairs with your torch (torch 2.14 -> torchvision 0.29).
+Installing torch, torchaudio and torchvision together from one index avoids this;
+`setup_v044.sh` does that (CPU by default, `TORCH_INDEX` to change).
+
 ### "ModuleNotFoundError: No module named 'tensorflow'"
 Already included in `spleeter` dependency, but if needed:
 ```bash
@@ -209,17 +216,11 @@ Use `requirements_spleeter_only.txt` - it requires less RAM.
 - Install GPU support for DEMUCS
 - Reduce audio sample rate in preprocessing
 
-### YouTube URLs not working?
-Install YouTube support:
-```bash
-pip install yt-dlp>=2024.1.0
-```
-
 ---
 
 ## Version Compatibility
 
-- **Python:** 3.8 - 3.11 (tested on 3.10)
+- **Python:** 3.9 - 3.12 (tested on 3.12)
 - **OS:** Windows, macOS, Linux
 - **FFmpeg:** 4.0+ required (system package, not pip)
 
@@ -259,20 +260,19 @@ Install if missing:
 
 For most users:
 ```bash
-# 1. Install PyTorch with GPU if available
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118
+# 1. PyTorch, all three together from one index (CPU; the app needs no GPU)
+pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cpu
 
 # 2. Install Music-Assassin dependencies
 pip install -r requirements.txt
 
-# 3. (Optional) YouTube support
-pip install yt-dlp
-
-# 4. Run
-python MusicAssassinGUI_v0.4.1.py
+# 3. Run
+python MusicAssassinGUI_v0.4.5.py
 ```
 
-This gives you both DEMUCS and Spleeter with automatic fallback support.
+Or let `setup_v044.sh` do steps 1 and 2 and download the model files.
+The fast engine is the default; Demucs, MDX-Net and Spleeter are available
+as alternatives when installed.
 
 ---
 

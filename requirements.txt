@@ -1,6 +1,11 @@
 # Music Assassin v0.4.5 Requirements
 # Python 3.12 (tested on assassin_venv_v0.4.2)
 # Install: pip install -r requirements.txt
+#   Install torch, torchaudio and torchvision FIRST, together, from one index, e.g. CPU:
+#     pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cpu
+#   torchvision comes in through audio-separator (onnx2torch); left to PyPI it is a CUDA
+#   build, which next to a CPU torch fails with "operator torchvision::nms does not exist"
+#   and MDX-Net can't load.
 # See setup_v044.sh for model file downloads
 
 # ── Separation engines ────────────────────────────────────────────────────────
@@ -11,6 +16,7 @@ spleeter>=2.4.0             # 4-stem TensorFlow separator (optional)
 # ── ML / DL frameworks ────────────────────────────────────────────────────────
 torch>=2.0.0                # DEMUCS, Silero VAD, DeepFilterNet
 torchaudio>=2.0.0           # required by torch audio loading
+torchvision>=0.15.0         # needed by audio-separator (onnx2torch); same build as torch, see above
 tensorflow>=2.16.0          # required by spleeter (tf 2.12.1 not available for py3.12)
 
 # ── ONNX inference ────────────────────────────────────────────────────────────
