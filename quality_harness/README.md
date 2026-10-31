@@ -57,9 +57,20 @@ python3 quality_harness/run_quality.py --separator fast_mdx --audit a2
 python3 quality_harness/run_quality.py --separator fast_mdx --audit a3 --clips real --stereo \
   --real-speech speech.wav --real-song song.wav --real-vocals song-vocals.wav
 
-# A4 "turn down, don't delete" music-mixback sweep:
-python3 quality_harness/run_quality.py --separator fast_mdx --audit a4
+# A4 "turn down, don't delete" music-mixback sweep (results: docs/A4_MUSIC_LEVEL_RESULTS.md).
+# Needs the real clips: the synthetic tier cannot judge dialogue with a real model.
+python3 quality_harness/run_quality.py --separator fast_mdx --audit a4 --clips real --stereo \
+  --real-speech speech.wav --real-song song.wav --real-vocals song-vocals.wav
 ```
+
+If the run reports `No module named 'fast_separation'`, the repo root is not on
+`sys.path` (the script's own folder is). Set `PYTHONPATH` to the repo, or on a
+path that contains a colon (the gvfs mount) insert it with `sys.path.insert`
+from a small launcher; `PYTHONPATH` splits on the colon.
+
+The same checks that need no models also run on every push as
+`tests/test_ci.py` (`python -m unittest discover -s tests`), including the
+`--self-check` run above.
 
 Each run writes a timestamped `*.md` (the before/after artefact) and `*.json`
 (for diffing across commits) under `quality_harness/reports/`.

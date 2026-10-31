@@ -38,6 +38,8 @@ paid APIs, no GPU required.
 - **A real model library, not one model** — Demucs, MDX-Net/UVR, Spleeter, and two dialogue/music/effects separators (MRX, CDX23) are all selectable, with VAD gating and a learned cleanup pass on top. See the [full lineup](#model-library) below.
 - **Fully offline, CPU-only** — every model runs locally once downloaded; nothing leaves your machine.
 - **Stereo in, stereo out** — stereo and surround sources come out in stereo, and kept sound effects keep their left/right placement (on `main`, in the next release).
+- **Turn the music down, not off** — a music level control adds the removed music back at -20 or -12 dB if a hard cut sounds unnatural (on `main`).
+- **Made for non-technical users** — a three-step window with plain-language choices, a 20-second preview before a full export, and settings that are remembered (on `main`).
 - **Video-aware** — subtitles are kept, and the video stream passes through untouched instead of being re-encoded.
 - **Batch** — queue a folder of files and let it run.
 
@@ -88,7 +90,9 @@ sound effects" is on: MRX or CDX23 separates an effects stem from the same
 pre-filtered audio, after the vocal pass, and it is mixed back in last so
 sounds between lines survive the gate. The released v0.4.5 has the same
 stages, but is mono throughout and its pre-filter still has a −40 dB noise
-gate.
+gate. On `main` a music-level control can also add the separated-out music
+back, quietly, at the same final mix stage as the effects (not drawn in the
+diagram).
 
 This pipeline has grown in stages since v0.0.1 (raw Spleeter, no filtering
 at all); see [`docs/PIPELINE_EVOLUTION.md`](docs/PIPELINE_EVOLUTION.md) for
@@ -140,12 +144,16 @@ stages? See the full per-version install matrix in
 
 ### Basic usage
 
-1. Launch the app and pick a separator from the dropdown (the fast engine is the default).
-2. Optionally turn on **Keep sound effects**.
-3. **Browse Files** to add audio/video.
-4. Pick a processing mode (Balanced recommended) and hit **Start Processing**.
-   Stereo sources come out in stereo; untick **Stereo output** for mono (on `main`).
-5. Output lands as `{filename}-vocals.{extension}` next to the source file.
+1. Press **Add files** and choose videos or audio. Each file gets an x to take it back out.
+2. Choose what you want:
+   - **Music:** remove it, or turn it down a lot (-20 dB) or a little (-12 dB) instead of deleting it.
+   - **Sound effects:** remove them with the music, or keep them (fast or best quality).
+   - **Quality:** Best (recommended), Faster or Fastest.
+   - **Keep stereo sound:** on by default.
+3. Press **Preview 20 s** to try the settings on a 20-second excerpt first. **Hear original** and **Hear result** open both in your default player.
+4. Press **Start**. **Stop** finishes the file in progress and then stops.
+   Everything technical (separation engine, strength, voice cleanup, VAD gate and so on) is under **Advanced settings**, and your choices are remembered between sessions.
+5. The output lands as `{filename}-vocals.{extension}` next to the source file.
 
 ---
 
