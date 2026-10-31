@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/icon.png" width="96" alt="Music Assassin icon">
+
 # Music Assassin
 
 **Strip background music out of long audio and video — keep the dialogue, keep the SFX.**
@@ -35,8 +37,9 @@ paid APIs, no GPU required.
 - **Keep the sound effects** — an optional pass extracts footsteps, impacts, and ambience separately and mixes them back in after the music is gone.
 - **A real model library, not one model** — Demucs, MDX-Net/UVR, Spleeter, and two dialogue/music/effects separators (MRX, CDX23) are all selectable, with VAD gating and a learned cleanup pass on top. See the [full lineup](#model-library) below.
 - **Fully offline, CPU-only** — every model runs locally once downloaded; nothing leaves your machine.
+- **Stereo in, stereo out** — stereo and surround sources come out in stereo, and kept sound effects keep their left/right placement (on `main`, in the next release).
 - **Video-aware** — subtitles are kept, and the video stream passes through untouched instead of being re-encoded.
-- **Batch + YouTube** — queue a folder of files, or just paste a YouTube URL.
+- **Batch** — queue a folder of files and let it run.
 
 ---
 
@@ -72,29 +75,20 @@ for the full table.
 
 ## Pipeline
 
-How a file actually moves through the app today (default settings; optional
-stages are dashed). Verified against the current processing code, not just
-the docstrings.
+How a file actually moves through the app on `main` (default settings;
+optional stages are dashed). Verified against the current processing code,
+not just the docstrings.
 
-```mermaid
-flowchart LR
-    IN([Input audio / video]) --> EXTRACT[Extract<br/>ffmpeg, mono] --> PRE[Pre-filter<br/>noise gate + high-pass] --> SEP[Separate vocals<br/>Voc_FT fast engine, default<br/>or MDX-Net / Demucs / Spleeter]
-```
+![Pipeline: extract, pre-filter, separate, post-filter, optional enhancer and VAD gate, optional effects mix, export](docs/pipeline/current.svg)
 
-```mermaid
-flowchart LR
-    POST[Post-filter<br/>harmonic rejection + notch] --> ENH{{DeepFilterNet<br/>optional}} --> VAD{{VAD gate, Silero<br/>optional, runs last}} --> MIX{{Mix effects back in<br/>optional}} --> OUT([Export<br/>video + subtitles preserved])
-
-    classDef optional stroke-dasharray: 4 3
-    class ENH,VAD,MIX optional
-```
-
-The second row picks up where the first leaves off: Separate feeds straight
-into Post-filter. The VAD gate deliberately runs *after* the cleanup pass,
-not before — DeepFilterNet needs a continuous signal to build its noise
-model, and gating first would fragment the audio. Mix only runs when "keep
-sound effects" is on, fed by a parallel MRX/CDX23 extraction not shown here
-for space.
+The VAD gate deliberately runs *after* the cleanup pass, not before —
+DeepFilterNet needs a continuous signal to build its noise model, and gating
+first would fragment the audio. The effects branch only runs when "keep
+sound effects" is on: MRX or CDX23 separates an effects stem from the same
+pre-filtered audio, after the vocal pass, and it is mixed back in last so
+sounds between lines survive the gate. The released v0.4.5 has the same
+stages, but is mono throughout and its pre-filter still has a −40 dB noise
+gate.
 
 This pipeline has grown in stages since v0.0.1 (raw Spleeter, no filtering
 at all); see [`docs/PIPELINE_EVOLUTION.md`](docs/PIPELINE_EVOLUTION.md) for
@@ -148,8 +142,9 @@ stages? See the full per-version install matrix in
 
 1. Launch the app and pick a separator from the dropdown (the fast engine is the default).
 2. Optionally turn on **Keep sound effects**.
-3. **Browse Files** to add audio/video, or paste a YouTube URL.
+3. **Browse Files** to add audio/video.
 4. Pick a processing mode (Balanced recommended) and hit **Start Processing**.
+   Stereo sources come out in stereo; untick **Stereo output** for mono (on `main`).
 5. Output lands as `{filename}-vocals.{extension}` next to the source file.
 
 ---
@@ -160,6 +155,10 @@ stages? See the full per-version install matrix in
 - **FFmpeg** — system package, not pip (`apt install ffmpeg` / `brew install ffmpeg`).
 - **Rust toolchain** — only if you want DeepFilterNet cleanup.
 - CPU-only; no GPU/CUDA needed anywhere in the pipeline.
+- Installing by hand instead of with `setup_v044.sh`: install `torch`, `torchaudio` and
+  `torchvision` first, together, from one index (`--index-url https://download.pytorch.org/whl/cpu`).
+  A CPU torch next to PyPI's CUDA torchvision stops MDX-Net from loading
+  ("operator torchvision::nms does not exist").
 
 Exact per-version Python/dependency matrix: [`CHANGELOG.md`](CHANGELOG.md) and
 [`requirements/REQUIREMENTS_GUIDE.md`](requirements/REQUIREMENTS_GUIDE.md).
@@ -182,7 +181,6 @@ This repo is also the research lab behind the model choices above:
 
 Feedback and PRs welcome. On the near-term list:
 - GPU acceleration toggle
-- Stereo output (currently mono)
 - SCNet / RoFormer models for higher-quality separation
 - A real-time-capable separator for the live app
 

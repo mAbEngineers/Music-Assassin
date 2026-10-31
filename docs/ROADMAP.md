@@ -560,6 +560,7 @@ present and the inference went the wrong way.
    the −40 dB pre-gate suspected of crossover distortion, the Normal-mode
    10 kHz low-pass, whether DeepFilterNet and the VAD gate earn their cost,
    and overlap 0.25 vs 0.1. All four are wired and unrun.
+   **Done 2026-10-30:** `docs/A2_AUDIT_RESULTS.md` (the pre-gate is removed).
 4. **R7.2 + R3** — the listening session, as planned: htdemucs vs Voc_FT (now
    also vs the fast engine, which didn't exist when this was written), and
    sherpa Spleeter int8.

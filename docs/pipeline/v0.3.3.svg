@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 549 791" width="549" height="791" font-family="Helvetica, Arial, sans-serif" font-size="13">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#495057"/></marker></defs>
+<rect width="549" height="791" rx="8" fill="#ffffff"/>
+<polyline points="143.0,80.0 143.0,147.0" fill="none" stroke="#495057" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="143.0,203.0 143.0,253.0" fill="none" stroke="#495057" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="143.0,309.0 143.0,359.0" fill="none" stroke="#495057" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="143.0,415.0 143.0,465.0" fill="none" stroke="#495057" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="143.0,521.0 143.0,571.0" fill="none" stroke="#495057" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="143.0,661.0 143.0,711.0" fill="none" stroke="#495057" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="308.0,60.5 262.0,60.5" fill="none" stroke="#495057" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#ar)"/>
+<rect x="24.0" y="41.0" width="238.0" height="39.0" rx="19.5" fill="#e7f5ff" stroke="#1971c2" stroke-width="1.6"/>
+<text x="143.0" y="65.0" text-anchor="middle" fill="#212529" font-weight="700">Input audio / video</text>
+<rect x="308.0" y="24.0" width="217.0" height="73.0" rx="6.0" fill="#fff9db" stroke="#e67700" stroke-width="1.6"/>
+<text x="416.5" y="48.0" text-anchor="middle" fill="#212529" font-weight="700">v0.3.4: paste a YouTube URL</text>
+<text x="416.5" y="65.0" text-anchor="middle" fill="#212529">yt-dlp downloads it, then</text>
+<text x="416.5" y="82.0" text-anchor="middle" fill="#212529">the same pipeline runs</text>
+<rect x="24.0" y="147.0" width="238.0" height="56.0" rx="6.0" fill="#f8f9fa" stroke="#495057" stroke-width="1.6"/>
+<text x="143.0" y="171.0" text-anchor="middle" fill="#212529" font-weight="700">Extract</text>
+<text x="143.0" y="188.0" text-anchor="middle" fill="#212529">ffmpeg pipe</text>
+<rect x="24.0" y="253.0" width="238.0" height="56.0" rx="6.0" fill="#ebfbee" stroke="#2b8a3e" stroke-width="1.6"/>
+<text x="143.0" y="277.0" text-anchor="middle" fill="#212529" font-weight="700">Pre-filter</text>
+<text x="143.0" y="294.0" text-anchor="middle" fill="#212529">high-pass 60 Hz + normalize</text>
+<rect x="24.0" y="359.0" width="238.0" height="56.0" rx="6.0" fill="#f8f9fa" stroke="#495057" stroke-width="1.6"/>
+<text x="143.0" y="383.0" text-anchor="middle" fill="#212529" font-weight="700">Chunk</text>
+<text x="143.0" y="400.0" text-anchor="middle" fill="#212529">20 s, 2 s overlap</text>
+<rect x="24.0" y="465.0" width="238.0" height="56.0" rx="6.0" fill="#f8f9fa" stroke="#495057" stroke-width="1.6"/>
+<text x="143.0" y="489.0" text-anchor="middle" fill="#212529" font-weight="700">Separate</text>
+<text x="143.0" y="506.0" text-anchor="middle" fill="#212529">Spleeter 4stems</text>
+<rect x="24.0" y="571.0" width="238.0" height="90.0" rx="6.0" fill="#ebfbee" stroke="#2b8a3e" stroke-width="1.6"/>
+<text x="143.0" y="595.0" text-anchor="middle" fill="#212529" font-weight="700">Post-filter</text>
+<text x="143.0" y="612.0" text-anchor="middle" fill="#212529">Normal / Balanced / Aggressive</text>
+<text x="143.0" y="629.0" text-anchor="middle" fill="#212529">notch filters + de-esser</text>
+<text x="143.0" y="646.0" text-anchor="middle" fill="#212529">+ formant boost</text>
+<rect x="24.0" y="711.0" width="238.0" height="56.0" rx="28.0" fill="#e7f5ff" stroke="#1971c2" stroke-width="1.6"/>
+<text x="143.0" y="735.0" text-anchor="middle" fill="#212529" font-weight="700">Export</text>
+<text x="143.0" y="752.0" text-anchor="middle" fill="#212529">video / subtitle passthrough</text>
+</svg>

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 272 812" width="272" height="812" font-family="Helvetica, Arial, sans-serif" font-size="13">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#495057"/></marker></defs>
+<rect width="272" height="812" rx="8" fill="#ffffff"/>
+<polyline points="136.0,63.0 136.0,113.0" fill="none" stroke="#495057" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="136.0,169.0 136.0,219.0" fill="none" stroke="#495057" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="136.0,275.0 136.0,325.0" fill="none" stroke="#495057" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="136.0,381.0 136.0,431.0" fill="none" stroke="#495057" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="136.0,487.0 136.0,537.0" fill="none" stroke="#495057" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="136.0,593.0 136.0,643.0" fill="none" stroke="#495057" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="136.0,699.0 136.0,749.0" fill="none" stroke="#495057" stroke-width="1.4" marker-end="url(#ar)"/>
+<rect x="24.0" y="24.0" width="224.0" height="39.0" rx="19.5" fill="#e7f5ff" stroke="#1971c2" stroke-width="1.6"/>
+<text x="136.0" y="48.0" text-anchor="middle" fill="#212529" font-weight="700">Input audio / video</text>
+<rect x="24.0" y="113.0" width="224.0" height="56.0" rx="6.0" fill="#f8f9fa" stroke="#495057" stroke-width="1.6"/>
+<text x="136.0" y="137.0" text-anchor="middle" fill="#212529" font-weight="700">Extract</text>
+<text x="136.0" y="154.0" text-anchor="middle" fill="#212529">ffmpeg pipe</text>
+<rect x="24.0" y="219.0" width="224.0" height="56.0" rx="6.0" fill="#f8f9fa" stroke="#495057" stroke-width="1.6"/>
+<text x="136.0" y="243.0" text-anchor="middle" fill="#212529" font-weight="700">Pre-filter</text>
+<text x="136.0" y="260.0" text-anchor="middle" fill="#212529">audio_prefilter</text>
+<rect x="24.0" y="325.0" width="224.0" height="56.0" rx="6.0" fill="#f8f9fa" stroke="#495057" stroke-width="1.6"/>
+<text x="136.0" y="349.0" text-anchor="middle" fill="#212529" font-weight="700">Separate</text>
+<text x="136.0" y="366.0" text-anchor="middle" fill="#212529">MDX-Net / Demucs / Spleeter</text>
+<rect x="24.0" y="431.0" width="224.0" height="56.0" rx="6.0" fill="#f8f9fa" stroke="#495057" stroke-width="1.6"/>
+<text x="136.0" y="455.0" text-anchor="middle" fill="#212529" font-weight="700">Post-filter</text>
+<text x="136.0" y="472.0" text-anchor="middle" fill="#212529">advanced_postprocess_chunked</text>
+<rect x="24.0" y="537.0" width="224.0" height="56.0" rx="6.0" fill="#ebfbee" stroke="#2b8a3e" stroke-width="1.6" stroke-dasharray="6 4"/>
+<text x="136.0" y="561.0" text-anchor="middle" fill="#212529" font-weight="700">DeepFilterNet cleanup</text>
+<text x="136.0" y="578.0" text-anchor="middle" fill="#212529">optional</text>
+<rect x="24.0" y="643.0" width="224.0" height="56.0" rx="6.0" fill="#ebfbee" stroke="#2b8a3e" stroke-width="1.6" stroke-dasharray="6 4"/>
+<text x="136.0" y="667.0" text-anchor="middle" fill="#212529" font-weight="700">VAD gate, Silero</text>
+<text x="136.0" y="684.0" text-anchor="middle" fill="#212529">optional, runs last</text>
+<rect x="24.0" y="749.0" width="224.0" height="39.0" rx="19.5" fill="#e7f5ff" stroke="#1971c2" stroke-width="1.6"/>
+<text x="136.0" y="773.0" text-anchor="middle" fill="#212529" font-weight="700">Export</text>
+</svg>

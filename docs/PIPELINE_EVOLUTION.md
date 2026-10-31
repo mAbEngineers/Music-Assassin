@@ -11,17 +11,17 @@ function, not from docstrings, module comments, or `HANDOVER.md`/`README.md`
 prose.** That distinction matters: two versions in this history have a
 code/comment mismatch (flagged below), where the stated pipeline is not the
 one that runs. For the current pipeline in everyday terms, see the README's
-[Pipeline section](../README.md#-pipeline); this document is the full,
+[Pipeline section](../README.md#pipeline); this document is the full,
 version-by-version derivation behind it.
+
+The diagrams are static SVGs drawn by
+[`pipeline/draw_pipelines.py`](pipeline/draw_pipelines.py), so they show
+as plain images. To change one, edit its definition there and rerun
+`python3 docs/pipeline/draw_pipelines.py`.
 
 ## Legend
 
-```mermaid
-flowchart LR
-    A[Stage, always runs] --> B{Choice between<br/>mutually-exclusive options}
-    B --> C{{Optional / checkbox-gated stage}}
-    C --> D([Input or output endpoint])
-```
+![Legend](pipeline/legend.svg)
 
 ## A note on "threading"
 
@@ -36,13 +36,7 @@ bar can repaint while a chunk runs, not for real concurrency. Treat every
 
 ## v0.0.1 — first working prototype
 
-```mermaid
-flowchart TD
-    IN([Input audio / video]) --> EXTRACT[Extract + decode<br/>MoviePy to_soundarray]
-    EXTRACT --> CHUNK[Chunk: 60s, no overlap]
-    CHUNK --> SEP[Separate<br/>Spleeter 2stems]
-    SEP --> OUT([Export<br/>MoviePy AudioArrayClip → write_videofile])
-```
+![v0.0.1 pipeline](pipeline/v0.0.1.svg)
 
 The whole app in four stages: no pre-filter, no post-filter, one hard-coded
 engine, no chunk overlap.
@@ -51,13 +45,7 @@ engine, no chunk overlap.
 
 ## v0.1.0 — FFmpeg rewrite
 
-```mermaid
-flowchart TD
-    IN([Input audio / video]) --> EXTRACT[Extract<br/>ffmpeg-python pipe]
-    EXTRACT --> CHUNK[Chunk: 60s, no overlap]
-    CHUNK --> SEP[Separate<br/>Spleeter 2stems]
-    SEP --> OUT([Export<br/>ffmpeg mux, video passthrough · vcodec copy])
-```
+![v0.1.0 pipeline](pipeline/v0.1.0.svg)
 
 Same shape as v0.0.1. What changed: extraction and export both move off
 MoviePy onto direct FFmpeg calls (faster, more reliable), and video files
@@ -67,16 +55,7 @@ are supported end to end for the first time.
 
 ## v0.3.0 — video & subtitles
 
-```mermaid
-flowchart TD
-    IN([Input audio / video]) --> EXTRACT[Extract<br/>ffmpeg pipe]
-    EXTRACT --> CHUNK[Chunk: 30s, 3s overlap]
-    CHUNK --> SEP[Separate<br/>Spleeter 2stems]
-    SEP --> BRANCH{Has video / subtitles?}
-    BRANCH -->|audio only| OUT1([Export: audio])
-    BRANCH -->|video, no subs| OUT2([Export: video passthrough + vocals])
-    BRANCH -->|video + subs| OUT3([Export: video + subtitle passthrough + vocals])
-```
+![v0.3.0 pipeline](pipeline/v0.3.0.svg)
 
 First appearance of chunk overlap (3s, reduces seam artifacts at chunk
 boundaries) and of a branching export: subtitle tracks are now preserved and
@@ -87,16 +66,7 @@ aren't spent on picture the app never touches.
 
 ## v0.3.3 (and v0.3.4) — Enhanced DSP Edition
 
-```mermaid
-flowchart TD
-    IN([Input audio / video]) --> EXTRACT[Extract<br/>ffmpeg pipe]
-    EXTRACT --> PRE[Pre-filter — new<br/>high-pass 60Hz + normalize]
-    PRE --> CHUNK[Chunk: 20s, 2s overlap]
-    CHUNK --> SEP[Separate<br/>Spleeter 4stems]
-    SEP --> POST[Post-filter — new<br/>Normal / Balanced / Aggressive<br/>notch filters + de-esser + formant boost]
-    POST --> OUT([Export<br/>video / subtitle passthrough])
-    YT[["v0.3.4: paste a YouTube URL<br/>yt-dlp downloads it, then the same pipeline runs"]] -.-> IN
-```
+![v0.3.3 pipeline](pipeline/v0.3.3.svg)
 
 First pre-filter and first post-filter stage in the project's history, each
 its own function. Spleeter switches from 2-stem to 4-stem. v0.3.4 adds
@@ -115,14 +85,7 @@ instead of browsing for a file) feeding the identical v0.3.3 pipeline.
 
 ## v0.4.0 — pivot to Demucs
 
-```mermaid
-flowchart TD
-    IN([Input audio / video]) --> EXTRACT[Extract<br/>torchaudio.load + resample]
-    EXTRACT --> CHUNK[Chunk: 30s, no overlap]
-    CHUNK --> SEP[Separate<br/>Demucs apply_model]
-    SEP --> POST[["Post-DSP (partial)<br/>compression + saturation + normalize only"]]
-    POST --> OUT([Export<br/>subprocess ffmpeg mux → new *-natural_vocals.mp4* file])
-```
+![v0.4.0 pipeline](pipeline/v0.4.0.svg)
 
 The first version to use a true neural source-separation model instead of
 Spleeter/DSP alone — and a near-total rebuild of the I/O around it:
@@ -144,20 +107,7 @@ branch of this pipeline.
 
 ## v0.4.1 (and v0.4.2) — selectable engines return
 
-```mermaid
-flowchart TD
-    IN([Input audio / video]) --> EXTRACT[Extract<br/>ffmpeg pipe, 8MB chunked read]
-    EXTRACT --> PRE[Pre-filter<br/>audio_prefilter: gate + high-pass + normalize]
-    PRE --> SEP{Separator choice}
-    SEP -->|Demucs| S1[htdemucs family<br/>60s / 2s-overlap chunks]
-    SEP -->|Spleeter| S2[4stems<br/>60s / 2s-overlap chunks]
-    SEP -.->|v0.4.2 adds| S3[MDX-Net, via audio-separator<br/>whole file, library handles its own chunking]
-    S1 --> POST
-    S2 --> POST
-    S3 --> POST
-    POST[Post-filter<br/>gentle de-ess + presence boost<br/>notch filters dropped — Demucs needs less cleanup]
-    POST --> OUT([Export<br/>video / subtitle passthrough<br/>+ other audio tracks preserved — new])
-```
+![v0.4.1 pipeline](pipeline/v0.4.1.svg)
 
 `audio_prefilter` and the post-filter both become standalone, reusable
 functions here (previously inline or absent). First version with a real
@@ -170,20 +120,7 @@ subtitles.
 
 ## v0.4.2-RT — experimental DSP → AI → DSP branch
 
-```mermaid
-flowchart TD
-    IN([Input audio / video]) --> EXTRACT[Extract<br/>ffmpeg pipe]
-    EXTRACT --> PRE[Pre-filter<br/>audio_prefilter, always on]
-    PRE --> HPSS{{HPSS pre-filter — new<br/>optional, off by default}}
-    HPSS --> SEP{Separator choice}
-    SEP -->|MDX-Net / Demucs / Spleeter| S1[selected engine]
-    SEP -.->|TTA — new, optional, off by default| TTA[Run twice, polarity-flipped<br/>average the two outputs]
-    S1 --> MGAN
-    TTA --> MGAN
-    MGAN{{MetricGAN+ post-filter — new<br/>optional, off by default}}
-    MGAN --> POST[Post-filter<br/>same de-ess / formant modes as v0.4.1]
-    POST --> OUT([Export])
-```
+![v0.4.2-RT pipeline](pipeline/v0.4.2-RT.svg)
 
 A research/testing branch, never promoted wholesale: `librosa.effects.hpss`
 splits out the harmonic content before separation, and SpeechBrain's
@@ -198,17 +135,7 @@ exactly** — called out for contrast with the two mismatches above.
 
 ## v0.4.4 — VAD gate + learned cleanup
 
-```mermaid
-flowchart TD
-    IN([Input audio / video]) --> EXTRACT[Extract<br/>ffmpeg pipe]
-    EXTRACT --> PRE[Pre-filter<br/>audio_prefilter]
-    PRE --> SEP{Separator choice}
-    SEP -->|MDX-Net / Demucs / Spleeter| S1[selected engine]
-    S1 --> POST[Post-filter<br/>advanced_postprocess_chunked]
-    POST --> ENH{{DeepFilterNet cleanup — new<br/>optional}}
-    ENH --> VAD{{VAD gate · Silero — new<br/>optional, runs last}}
-    VAD --> OUT([Export])
-```
+![v0.4.4 pipeline](pipeline/v0.4.4.svg)
 
 First appearance of a VAD gate and a learned post-separation enhancer
 anywhere in this project. Both land *after* the DSP post-filter; the VAD
@@ -219,48 +146,49 @@ binaries currently published under the [v0.4.4 release](https://github.com/mAbEn
 
 ---
 
-## v0.4.5 — current (fast engine + keep sound effects)
+## v0.4.5 — latest release (fast engine + keep sound effects)
 
-```mermaid
-flowchart TD
-    IN([Input audio / video]) --> EXTRACT[Extract audio track<br/>ffmpeg, mono]
-    EXTRACT --> PRE[Pre-filter<br/>noise gate + high-pass]
-    PRE --> SEP[Separate vocals<br/>Voc_FT fast engine · OpenVINO — default<br/>or MDX-Net / Demucs / Spleeter]
-    SEP --> POST[Post-filter<br/>harmonic rejection + notch filters]
-    POST --> ENH{{DeepFilterNet cleanup<br/>optional}}
-    ENH --> VAD{{VAD gate · Silero<br/>optional, runs last}}
-    SEP -.->|keep sound effects on — new| FX[Separate effects stem — new<br/>MRX or CDX23, in parallel]
-    VAD --> MIX[Mix effects back in — new]
-    FX -.-> MIX
-    MIX --> OUT([Export<br/>video + subtitles preserved])
-```
+![v0.4.5 pipeline](pipeline/v0.4.5.svg)
 
 Same backbone as v0.4.4. What's new: two faster separator choices (the
 OpenVINO-accelerated Voc_FT fast engine, now default, and MRX dialogue), and
-the "keep sound effects" branch — a parallel separation call that extracts
+the "keep sound effects" branch — a second separation call that extracts
 an effects stem and mixes it back in after the VAD gate, scaled to sit at
-roughly its original level relative to the dialogue. This is the version
+roughly its original level relative to the dialogue. It runs after the vocal
+pass, not alongside it (both already use every core), and its input skips
+the noise gate, which would erase ambience. The post-filter is EQ only, as
+since v0.4.1: a band-limit in Normal mode, de-esser plus presence boost in
+Balanced and Aggressive. (An earlier version of this diagram said "harmonic
+rejection + notch filters" and "in parallel"; the v0.4.5 code does neither.) This is the version
 on the [releases page](https://github.com/mAbEngineers/Music-Assassin/releases)
 today; see the README's [Download](../README.md#download) section for exact
-asset links. The diagram there covers the same ground as the two here, laid
-out more compactly.
+asset links. The README's diagram shows `main`, next section.
+
+---
+
+## main, since v0.4.5 — next release (stereo, no noise gate)
+
+![main pipeline](pipeline/current.svg)
+
+The same stages as v0.4.5, with two changes to what flows through them:
+
+- **Stereo.** A source with two or more channels is extracted, processed
+  and exported in stereo (surround is downmixed by ffmpeg); a mono source
+  stays mono. Every separator takes stereo, including Demucs, MDX-Net and
+  Spleeter. The mono-only enhancers run once on the mid and apply its gain
+  to both channels. A "Stereo output" checkbox turns it off, and when there
+  isn't the memory the app falls back to mono and says so next to the
+  file. Details: `docs/A3_STEREO_RESULTS.md`.
+- **No noise gate.** The −40 dB per-sample gate is gone from the pre-filter
+  (A2 audit, `docs/A2_AUDIT_RESULTS.md`): it did nothing at normal levels
+  and badly distorted dialogue in quiet files. With it gone, the effects
+  branch takes the same pre-filtered input as the dialogue.
 
 ---
 
 ## v0.5.0 (and v0.5.1) — parked streaming experiment
 
-```mermaid
-flowchart TD
-    IN([Input audio / video]) --> EXTRACT[Extract<br/>ffmpeg pipe, 8MB chunked read]
-    EXTRACT --> PRE{{Pre-filter<br/>optional, ON by default}}
-    PRE --> SEP[Separate<br/>Demucs only — model variant selectable<br/>one background thread, still sequential]
-    SEP --> POST{{Post-filter<br/>optional, ON by default}}
-    POST --> KEEP{Keep original audio tracks?<br/>default: yes}
-    KEEP -->|yes| MERGE[Append vocals as a new track<br/>alongside the originals, same file]
-    KEEP -->|no| REPLACE[Vocals-only output]
-    MERGE --> OUT([Export<br/>atomic in-place overwrite of the input file<br/>+ optional live-preview stream to VLC])
-    REPLACE --> OUT
-```
+![v0.5.0 pipeline](pipeline/v0.5.0.svg)
 
 A separate architectural branch, not a continuation of the v0.4.x line (see
 `CHANGELOG.md`'s note on the version numbers). The only point in this

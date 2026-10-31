@@ -186,9 +186,9 @@ Other runs in the same session:
 
 ## Keep sound effects (measured 2026-10-22)
 
-**How it works.** This runs in parallel with the de-musicing:
+**How it works.** This runs alongside the de-musicing, after the vocal pass:
 - **Dialogue** comes from the selected separator, as before.
-- **The effects stem** is extracted from the original audio by MRX or CDX23. Its input skips the −40 dB per-sample noise gate, which would erase ambience.
+- **The effects stem** is extracted from the original audio by MRX or CDX23. Its input skipped the −40 dB per-sample noise gate, which would erase ambience; since the A2 audit (2026-10-30) the gate is gone from both paths.
 - **Level matching:** the effects are scaled by the gain that post-processing applied to the dialogue, so they keep their original level relative to it.
 - **Mixing:** they are added after the VAD gate, so sounds between lines survive. A 512-sample block limiter then keeps peaks at or below 0.98 without ducking the whole file.
 - **When the separator is MRX too,** one MRX pass gives both stems.

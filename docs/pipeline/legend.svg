@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1020 104" width="1020" height="104" font-family="Helvetica, Arial, sans-serif" font-size="13">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#495057"/></marker></defs>
+<rect width="1020" height="104" rx="8" fill="#ffffff"/>
+<rect x="24.0" y="24.0" width="112.0" height="56.0" rx="6.0" fill="#f8f9fa" stroke="#495057" stroke-width="1.6"/>
+<text x="80.0" y="48.0" text-anchor="middle" fill="#212529" font-weight="700">Stage</text>
+<text x="80.0" y="65.0" text-anchor="middle" fill="#212529">always runs</text>
+<polygon points="196.0,24.0 329.0,24.0 343.0,52.0 329.0,80.0 196.0,80.0 182.0,52.0" fill="#f3f0ff" stroke="#5f3dc4" stroke-width="1.6"/>
+<text x="262.5" y="48.0" text-anchor="middle" fill="#212529" font-weight="700">Choice</text>
+<text x="262.5" y="65.0" text-anchor="middle" fill="#212529">between options</text>
+<rect x="389.0" y="24.0" width="126.0" height="56.0" rx="6.0" fill="#f8f9fa" stroke="#495057" stroke-width="1.6" stroke-dasharray="6 4"/>
+<text x="452.0" y="48.0" text-anchor="middle" fill="#212529" font-weight="700">Optional</text>
+<text x="452.0" y="65.0" text-anchor="middle" fill="#212529">checkbox-gated</text>
+<rect x="561.0" y="24.0" width="112.0" height="56.0" rx="28.0" fill="#e7f5ff" stroke="#1971c2" stroke-width="1.6"/>
+<text x="617.0" y="48.0" text-anchor="middle" fill="#212529" font-weight="700">Input or</text>
+<text x="617.0" y="65.0" text-anchor="middle" fill="#212529">output</text>
+<rect x="719.0" y="24.0" width="112.0" height="56.0" rx="6.0" fill="#ebfbee" stroke="#2b8a3e" stroke-width="1.6"/>
+<text x="775.0" y="48.0" text-anchor="middle" fill="#212529" font-weight="700">New in</text>
+<text x="775.0" y="65.0" text-anchor="middle" fill="#212529">this version</text>
+<rect x="877.0" y="24.0" width="119.0" height="56.0" rx="6.0" fill="#fff9db" stroke="#e67700" stroke-width="1.6"/>
+<text x="936.5" y="48.0" text-anchor="middle" fill="#212529" font-weight="700">Partial stage</text>
+<text x="936.5" y="65.0" text-anchor="middle" fill="#212529">or side note</text>
+</svg>

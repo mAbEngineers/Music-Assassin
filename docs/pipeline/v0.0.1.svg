@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 230 528" width="230" height="528" font-family="Helvetica, Arial, sans-serif" font-size="13">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#495057"/></marker></defs>
+<rect width="230" height="528" rx="8" fill="#ffffff"/>
+<polyline points="115.0,63.0 115.0,113.0" fill="none" stroke="#495057" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="115.0,169.0 115.0,219.0" fill="none" stroke="#495057" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="115.0,275.0 115.0,325.0" fill="none" stroke="#495057" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="115.0,381.0 115.0,431.0" fill="none" stroke="#495057" stroke-width="1.4" marker-end="url(#ar)"/>
+<rect x="24.0" y="24.0" width="182.0" height="39.0" rx="19.5" fill="#e7f5ff" stroke="#1971c2" stroke-width="1.6"/>
+<text x="115.0" y="48.0" text-anchor="middle" fill="#212529" font-weight="700">Input audio / video</text>
+<rect x="24.0" y="113.0" width="182.0" height="56.0" rx="6.0" fill="#f8f9fa" stroke="#495057" stroke-width="1.6"/>
+<text x="115.0" y="137.0" text-anchor="middle" fill="#212529" font-weight="700">Extract + decode</text>
+<text x="115.0" y="154.0" text-anchor="middle" fill="#212529">MoviePy to_soundarray</text>
+<rect x="24.0" y="219.0" width="182.0" height="56.0" rx="6.0" fill="#f8f9fa" stroke="#495057" stroke-width="1.6"/>
+<text x="115.0" y="243.0" text-anchor="middle" fill="#212529" font-weight="700">Chunk</text>
+<text x="115.0" y="260.0" text-anchor="middle" fill="#212529">60 s, no overlap</text>
+<rect x="24.0" y="325.0" width="182.0" height="56.0" rx="6.0" fill="#f8f9fa" stroke="#495057" stroke-width="1.6"/>
+<text x="115.0" y="349.0" text-anchor="middle" fill="#212529" font-weight="700">Separate</text>
+<text x="115.0" y="366.0" text-anchor="middle" fill="#212529">Spleeter 2stems</text>
+<rect x="24.0" y="431.0" width="182.0" height="73.0" rx="36.5" fill="#e7f5ff" stroke="#1971c2" stroke-width="1.6"/>
+<text x="115.0" y="455.0" text-anchor="middle" fill="#212529" font-weight="700">Export</text>
+<text x="115.0" y="472.0" text-anchor="middle" fill="#212529">MoviePy AudioArrayClip</text>
+<text x="115.0" y="489.0" text-anchor="middle" fill="#212529">-&gt; write_videofile</text>
+</svg>
