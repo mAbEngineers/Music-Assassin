@@ -134,6 +134,10 @@ transient_gate_enabled = False  # Apply spectral transient gate after enhancer
 # Stereo: stereo (or surround, downmixed) sources are processed and exported
 # in stereo, mono sources stay mono. Arrays are [n] mono or [2, n] stereo.
 stereo_output = True
+APP_VERSION = "0.4.5"
+# Music the separator removed, added back this many dB below the original mix
+# (A4). None deletes it, as before.
+music_level_db = None
 # Mono-only enhancers on stereo: "mid" runs the enhancer once on (L+R)/2 and
 # applies its time-frequency gain to each channel; "per_channel" runs it on
 # L and R separately (about twice the time).
@@ -274,19 +278,40 @@ class PrintLogger:
     def flush(self):
         self._flush_to_widget()
 
+_pumping = False
+_last_pump = 0.0
+
+def _pump():
+    """Let the window repaint and answer clicks (Stop, closing) while a file
+    is being processed on the main thread. Throttled, and never re-entered."""
+    global _pumping, _last_pump
+    if _pumping or root is None:
+        return
+    now = time.perf_counter()
+    if now - _last_pump < 0.05:
+        return
+    _pumping = True
+    try:
+        root.update()
+    except Exception:
+        pass
+    finally:
+        _pumping = False
+        _last_pump = time.perf_counter()
+
 def update_status(message):
     """Update status label"""
     global status_text
     status_text = message
     if status_label:
-        status_label.config(text=f"  {message}")
-        root.update_idletasks()
+        status_label.config(text=message)
+        _pump()
 
 def update_progress(value, total):
     """Update progress bar"""
     if progress:
         progress['value'] = (value / total) * 100
-        root.update_idletasks()
+        _pump()
 
 # ============================================================================
 # AUDIO DSP PIPELINE (Pre-Processing)
@@ -445,19 +470,35 @@ def advanced_postprocess_chunked(vocals, sr=44100, mode='balanced', chunk_size=N
     print(f"Post-processing complete")
     return output
 
-def mix_effects(vocals, effects, gain, sr=44100, ceiling=0.98, block=512):
-    """Add the effects stem to the processed dialogue, then limit peaks.
+def mix_effects(vocals, effects, gain, sr=44100, ceiling=0.98, block=512, music=None, music_gain=0.0):
+    """Add the effects stem and/or a turned-down music stem to the processed
+    dialogue, then limit peaks.
 
-    The limiter works on 512-sample blocks: each block's gain is the lowest
-    of its own and its neighbours' required gain, interpolated linearly
-    between block centres, so no sample exceeds the ceiling and a single loud
-    effect only ducks the ~30 ms around it instead of the whole file.
+    `effects` may be None (music only). The limiter works on 512-sample
+    blocks: each block's gain is the lowest of its own and its neighbours'
+    required gain, interpolated linearly between block centres, so no sample
+    exceeds the ceiling and a single loud effect only ducks the ~30 ms around
+    it instead of the whole file.
     """
-    print(f"Mixing sound effects back in (gain {20 * np.log10(max(gain, 1e-10)):+.1f} dB)...")
-    update_status("Mixing sound effects back in...")
-    # Either may be mono [n] or stereo [2, n]; mono broadcasts into stereo.
-    n = min(vocals.shape[-1], effects.shape[-1])
-    out = vocals[..., :n] + effects[..., :n].astype(np.float32) * np.float32(gain)
+    parts = []
+    if effects is not None:
+        parts.append(f"effects {20 * np.log10(max(gain, 1e-10)):+.1f} dB")
+    if music is not None:
+        parts.append(f"music {20 * np.log10(max(music_gain, 1e-10)):+.1f} dB")
+    print(f"Mixing back in ({', '.join(parts)})...")
+    update_status("Mixing sound effects and music back in...")
+    # Any may be mono [n] or stereo [2, n]; mono broadcasts into stereo.
+    n = vocals.shape[-1]
+    for extra in (effects, music):
+        if extra is not None:
+            n = min(n, extra.shape[-1])
+    shape = np.broadcast_shapes(*[x.shape[:-1] + (n,) for x in (vocals, effects, music) if x is not None])
+    out = np.zeros(shape, np.float32)
+    out += vocals[..., :n]
+    if effects is not None:
+        out += effects[..., :n].astype(np.float32) * np.float32(gain)
+    if music is not None:
+        out += music[..., :n].astype(np.float32) * np.float32(music_gain)
 
     # Same tail fade as advanced_postprocess_chunked applied to the dialogue.
     fade_samps = min(int(sr * 0.5), n)
@@ -1744,13 +1785,14 @@ def ask_audio_track(audio_streams):
 
     import tkinter as tk
 
-    BG     = '#0d0d14'
-    CARD   = '#14141f'
-    BORDER = '#22223a'
-    ACCENT = '#4f7ef0'
-    TEXT   = '#cdd2de'
-    MUTED  = '#505a72'
-    GREEN  = '#27ae60'
+    BG     = '#0d0d10'
+    CARD   = '#17171c'
+    BORDER = '#24242c'
+    ACCENT = '#2ecc71'
+    TEXT   = '#f2f2f4'
+    MUTED  = '#87878f'
+    GREEN  = '#2ecc71'
+    INK    = '#08301b'
 
     result = [None]
     dialog = tk.Toplevel(root)
@@ -1760,12 +1802,12 @@ def ask_audio_track(audio_streams):
     dialog.grab_set()
     dialog.transient(root)
 
-    tk.Label(dialog, text="Multiple audio tracks detected",
+    tk.Label(dialog, text="This file has more than one audio track",
              font=("Segoe UI", 10, "bold"), bg=BG, fg=TEXT
              ).pack(padx=20, pady=(16, 4))
 
     # ── Track selection ──────────────────────────────────────────────────────
-    tk.Label(dialog, text="TRACK TO PROCESS", font=("Segoe UI", 7, "bold"),
+    tk.Label(dialog, text="WHICH AUDIO TRACK?", font=("Segoe UI", 7, "bold"),
              bg=BG, fg=MUTED).pack(anchor="w", padx=20, pady=(6, 2))
 
     track_var = tk.IntVar(value=0)
@@ -1792,12 +1834,12 @@ def ask_audio_track(audio_streams):
         result[0] = [t['index'] for t in audio_streams]
         dialog.destroy()
 
-    tk.Button(btn_row, text="Process Selected", command=confirm_one,
-              bg=ACCENT, fg="white", font=("Segoe UI", 9, "bold"),
+    tk.Button(btn_row, text="Process this track", command=confirm_one,
+              bg=GREEN, fg=INK, font=("Segoe UI", 9, "bold"),
               relief="flat", pady=7, cursor="hand2"
               ).pack(side="left", expand=True, fill="x", padx=(0, 6))
-    tk.Button(btn_row, text=f"Process All  ({len(audio_streams)})", command=confirm_all,
-              bg=GREEN, fg="white", font=("Segoe UI", 9, "bold"),
+    tk.Button(btn_row, text=f"Process all {len(audio_streams)}", command=confirm_all,
+              bg=CARD, fg=TEXT, font=("Segoe UI", 9, "bold"),
               relief="flat", pady=7, cursor="hand2"
               ).pack(side="right", expand=True, fill="x")
 
@@ -1855,6 +1897,9 @@ def _stereo_fits(duration):
     print(f"WARNING: not enough free memory for stereo ({avail / 1e9:.1f} GB free, "
           f"~{need / 1e9:.1f} GB needed) -- processing in mono")
     return False
+
+# Samples of silence the AAC encoder puts at the start of a stream.
+AAC_PRIMING = 1024
 
 # Names of the files that fell back to mono this run, for the status line.
 _mono_fallbacks = []
@@ -1977,7 +2022,9 @@ def _process_single_track(file_path, input_, track_idx, output_path, video, audi
         return False
 
     # Free the raw waveform immediately — the separator has finished with it
-    del waveform
+    # (unless the music-level control still needs it for the residual)
+    if music_level_db is None:
+        del waveform
     gc.collect()
 
     if vocals is None:
@@ -1995,6 +2042,21 @@ def _process_single_track(file_path, input_, track_idx, output_path, video, audi
         update_status(f"Extracting sound effects ({fx_choice.upper()})...")
         effects = fast_separation.separate_dme(fx_input, fx_choice, sample_rate, want=("effects",),
                                                progress=_sep_progress)["effects"]
+    # What the separator took out, for the music-level control: original minus
+    # dialogue (minus the effects stem, which is mixed back on its own). Done
+    # in place on the input -- nothing else reads it past this point.
+    music = None
+    if music_level_db is not None:
+        music = fx_input if fx_input is not None else waveform
+        n_m = min(music.shape[-1], vocals.shape[-1])
+        music = music[..., :n_m]
+        np.subtract(music, vocals[..., :n_m], out=music)
+        if effects is not None:
+            n_m = min(n_m, effects.shape[-1])
+            music = music[..., :n_m]
+            music -= effects[..., :n_m]
+        music = np.ascontiguousarray(music)
+        waveform = None
     if fx_on:
         del fx_input
         _lap(f"effects ({fx_choice})")
@@ -2022,11 +2084,13 @@ def _process_single_track(file_path, input_, track_idx, output_path, video, audi
     # Effects go back in after the VAD gate, so sounds between lines of
     # dialogue survive it. Scaled by the post-process gain, they sit at the
     # same level relative to the dialogue as in the original mix.
-    if effects is not None:
-        vocals = mix_effects(vocals, effects, _last_post_gain * 10 ** (fx_level_db / 20), sample_rate)
-        del effects
+    if effects is not None or music is not None:
+        vocals = mix_effects(vocals, effects, _last_post_gain * 10 ** (fx_level_db / 20), sample_rate,
+                             music=music,
+                             music_gain=_last_post_gain * 10 ** ((music_level_db or 0.0) / 20))
+        effects = music = None
         gc.collect()
-        _lap("effects mix")
+        _lap("effects/music mix")
 
     print(f"  Exporting: {os.path.basename(output_path)}")
     update_status(f"Exporting: {os.path.basename(output_path)}")
@@ -2066,14 +2130,24 @@ def _process_single_track(file_path, input_, track_idx, output_path, video, audi
     # copy of the output in RAM alongside the numpy array. Stereo is
     # interleaved one chunk at a time.
     _chunk = 8 * 1024 * 1024
+    # AAC in Matroska plays 1024 samples (23 ms) late: the encoder's priming
+    # silence is not compensated by the muxer, unlike M4A/MP4 (measured with
+    # an impulse test, 2026-11). Skip that much of the start and pad the end
+    # with silence, so the length stays the same and the audio lands on time.
+    _skip = AAC_PRIMING if ext.lower() == 'mkv' else 0
     if vocals.ndim == 1:
         _view = memoryview(vocals.astype('<f4', copy=False))
         del vocals
-        for _i in range(0, len(_view), _chunk):
+        for _i in range(_skip, len(_view), _chunk):
             process2.stdin.write(_view[_i:_i + _chunk])
+        if _skip:
+            process2.stdin.write(np.zeros(_skip, '<f4'))
     else:
-        for _i in range(0, vocals.shape[1], _chunk // 2):
+        _n = vocals.shape[1]
+        for _i in range(_skip, _n, _chunk // 2):
             process2.stdin.write(np.ascontiguousarray(vocals[:, _i:_i + _chunk // 2].T, dtype='<f4'))
+        if _skip:
+            process2.stdin.write(np.zeros((_skip, vocals.shape[0]), '<f4'))
         del vocals
     process2.stdin.close()
     process2.wait()
@@ -2139,298 +2213,15 @@ def demusic_pro(file_path):
         return False
 
 # ============================================================================
-# GUI SETUP
+# SETTINGS (remembered between sessions)
 # ============================================================================
 
-def setFrames(root):
-    """Compact formal dark GUI"""
-    global b1, b2, inprogressframe, listbox, f1, a1, progress, status_label, mode_selector, separator_selector, quantize_var, vad_var, df_var, enh_selector, ov_var, tgate_var, fx_selector, fx_level_selector, stereo_var
-
-    BG      = '#0d0d14'
-    CARD    = '#14141f'
-    BORDER  = '#22223a'
-    ACCENT  = '#4f7ef0'
-    ACCENT2 = '#3a6bd6'
-    TEXT    = '#cdd2de'
-    MUTED   = '#505a72'
-    GREEN   = '#27ae60'
-    RED     = '#c0392b'
-
-    style = Style(root)
-    style.theme_use('clam')
-    style.configure('App.TCombobox',
-        fieldbackground=CARD, background=CARD, foreground=TEXT,
-        selectbackground='#1c2a4a', selectforeground=ACCENT,
-        bordercolor=BORDER, arrowcolor=ACCENT, padding=4
-    )
-    style.map('App.TCombobox',
-        fieldbackground=[('readonly', CARD)],
-        foreground=[('readonly', TEXT)],
-    )
-    style.configure('App.Horizontal.TProgressbar',
-        background=ACCENT, troughcolor='#0a0a12',
-        bordercolor=BORDER, lightcolor=ACCENT, darkcolor=ACCENT2
-    )
-
-    root.configure(background=BG)
-
-    def divider(parent=root, color=BORDER, h=1, padx=0):
-        Frame(parent, bg=color, height=h).pack(fill="x", padx=padx)
-
-    def section_label(text):
-        Label(root, text=text, font=("Segoe UI", 7, "bold"),
-              bg=BG, fg=MUTED, anchor="w").pack(fill="x", padx=16, pady=(9, 2))
-
-    def mk_card(parent, pad_inner=0):
-        f = Frame(parent, bg=CARD, highlightthickness=1,
-                  highlightbackground=BORDER, highlightcolor=ACCENT)
-        return f
-
-    # ── HEADER ──────────────────────────────────────────────────────────────
-    hdr = Frame(root, bg='#0f0f1c')
-    hdr.pack(fill="x")
-
-    title_row = Frame(hdr, bg='#0f0f1c')
-    title_row.pack(fill="x", padx=16, pady=(10, 8))
-
-    Label(title_row, text="Music Assassin Pro",
-          font=("Segoe UI", 15, "bold"), bg='#0f0f1c', fg=TEXT).pack(side="left")
-    Label(title_row, text="v0.4.5",
-          font=("Segoe UI", 10), bg='#0f0f1c', fg=ACCENT).pack(side="left", padx=(6, 0), pady=4)
-    Label(title_row, text="MDX-Net / DEMUCS / Spleeter  \u2022  VAD  \u2022  DeepFilter  \u2022  INT8",
-          font=("Segoe UI", 8), bg='#0f0f1c', fg=MUTED).pack(side="right", pady=4)
-
-    Frame(root, bg=ACCENT, height=2).pack(fill="x")
-
-    # ── SEPARATOR + MODE (side-by-side) ─────────────────────────────────────
-    section_label("CONFIGURATION")
-    top_row = Frame(root, bg=BG)
-    top_row.pack(fill="x", padx=16, pady=(0, 0))
-
-    sep_card = mk_card(top_row)
-    sep_card.pack(side="left", expand=True, fill="both", padx=(0, 6))
-    Label(sep_card, text="SEPARATOR / MODEL", font=("Segoe UI", 7, "bold"),
-          bg=CARD, fg=MUTED).pack(anchor="w", padx=10, pady=(7, 2))
-    sep_options = []
-    if FAST_ENGINE_AVAILABLE:
-        sep_options.append(FAST_SEP_BEST)
-        sep_options.append(FAST_SEP_QUICK)
-        sep_options.append(FAST_SEP_MRX)
-    if AUDIO_SEPARATOR_AVAILABLE:
-        sep_options.append("MDX-Net Voc_FT   (Vocals · Fast · 66 MB)")
-        sep_options.append("MDX-Net Kim_v2   (Vocals · Best CPU · 130 MB)")
-    if DEMUCS_AVAILABLE:
-        sep_options.append("DEMUCS htdemucs  (Fast)")
-        sep_options.append("DEMUCS htdemucs_ft  (Quality)")
-        sep_options.append("DEMUCS mdx_extra  (Best)")
-    if SPLEETER_AVAILABLE:
-        sep_options.append("Spleeter  (4-Stems)")
-    if sep_options:
-        separator_selector = Combobox(sep_card, values=sep_options, state="readonly",
-                                      font=("Segoe UI", 9), style='App.TCombobox')
-        separator_selector.set(sep_options[0])
-        separator_selector.pack(fill="x", padx=10, pady=(0, 4))
-        separator_selector.bind("<<ComboboxSelected>>", lambda e: set_separator())
-        quantize_var = BooleanVar(value=True)
-        Checkbutton(sep_card, text="INT8 quantize (2-3x faster, htdemucs)",
-                    variable=quantize_var, command=set_quantize,
-                    bg=CARD, fg=TEXT, selectcolor=CARD, activebackground=CARD,
-                    activeforeground=ACCENT, highlightthickness=0,
-                    font=("Segoe UI", 7)).pack(anchor="w", padx=8, pady=(0, 7))
-    else:
-        Label(sep_card, text="No separator available",
-              font=("Segoe UI", 8), fg=RED, bg=CARD).pack(padx=10, pady=(0, 8), anchor="w")
-
-    mode_card = mk_card(top_row)
-    mode_card.pack(side="right", expand=True, fill="both")
-    Label(mode_card, text="PROCESSING MODE", font=("Segoe UI", 7, "bold"),
-          bg=CARD, fg=MUTED).pack(anchor="w", padx=10, pady=(7, 2))
-    mode_selector = Combobox(mode_card, values=["Normal", "Balanced", "Aggressive"],
-                             state="readonly", font=("Segoe UI", 9), style='App.TCombobox')
-    mode_selector.set("Balanced")
-    mode_selector.pack(fill="x", padx=10, pady=(0, 3))
-    mode_selector.bind("<<ComboboxSelected>>", lambda e: set_mode())
-    Label(mode_card, text="60-70%  \u2022  75-85%  \u2022  90-95% removal",
-          font=("Segoe UI", 7), bg=CARD, fg=MUTED).pack(anchor="w", padx=10, pady=(0, 2))
-    stereo_var = BooleanVar(value=stereo_output)
-    Checkbutton(mode_card, text="Stereo output  (mono if memory is short)",
-                variable=stereo_var, command=set_stereo,
-                bg=CARD, fg=TEXT, selectcolor=CARD, activebackground=CARD,
-                activeforeground=ACCENT, highlightthickness=0,
-                font=("Segoe UI", 7)).pack(anchor="w", padx=8, pady=(0, 7))
-
-    # ── ENHANCEMENT ──────────────────────────────────────────────────────────
-    enh_card = mk_card(root)
-    enh_card.pack(fill="x", padx=16, pady=(6, 0))
-    Label(enh_card, text="ENHANCEMENT", font=("Segoe UI", 7, "bold"),
-          bg=CARD, fg=MUTED).pack(anchor="w", padx=10, pady=(7, 4))
-
-    # Row 0 — Keep sound effects
-    fx_row = Frame(enh_card, bg=CARD)
-    fx_row.pack(fill="x", padx=10, pady=(0, 4))
-    Label(fx_row, text="Keep sound effects:", bg=CARD, fg=TEXT,
-          font=("Segoe UI", 8)).pack(side="left", padx=(0, 4))
-    fx_options = [FX_OFF]
-    if FAST_ENGINE_AVAILABLE:
-        fx_options.append(FX_MRX)
-        if fast_separation.dme_available("cdx23"):
-            fx_options.append(FX_CDX23)
-    fx_selector = Combobox(fx_row, values=fx_options, width=30,
-                           state="readonly" if len(fx_options) > 1 else "disabled",
-                           font=("Segoe UI", 8), style='App.TCombobox')
-    fx_selector.set(FX_OFF)
-    fx_selector.pack(side="left")
-    fx_selector.bind("<<ComboboxSelected>>", lambda e: set_fx())
-    Label(fx_row, text="Level:", bg=CARD, fg=TEXT,
-          font=("Segoe UI", 8)).pack(side="left", padx=(10, 4))
-    fx_level_selector = Combobox(fx_row, values=list(FX_LEVELS), width=16,
-                                 state="disabled", font=("Segoe UI", 8),
-                                 style='App.TCombobox')
-    fx_level_selector.set("Normal")
-    fx_level_selector.pack(side="left")
-    fx_level_selector.bind("<<ComboboxSelected>>", lambda e: set_fx_level())
-    Label(fx_row, text="footsteps, doors, ambience",
-          bg=CARD, fg=MUTED, font=("Segoe UI", 7)).pack(side="left", padx=(8, 0))
-
-    # Row 1 — VAD toggle + enhancer selector
-    enh_row = Frame(enh_card, bg=CARD)
-    enh_row.pack(fill="x", padx=10, pady=(0, 4))
-
-    vad_var = BooleanVar(value=False)
-    ck_kw = dict(bg=CARD, fg=TEXT, selectcolor=CARD, activebackground=CARD,
-                 activeforeground=ACCENT, highlightthickness=0, font=("Segoe UI", 8))
-
-    vad_lbl = "VAD Gate"
-    if not VAD_AVAILABLE:
-        vad_lbl += " [needs torch]"
-    Checkbutton(enh_row, text=vad_lbl,
-                variable=vad_var, command=set_vad,
-                state="normal" if VAD_AVAILABLE else "disabled",
-                **ck_kw).pack(side="left", padx=(0, 14))
-
-    Label(enh_row, text="Enhancer:", bg=CARD, fg=MUTED,
-          font=("Segoe UI", 8)).pack(side="left", padx=(0, 4))
-
-    # Build option list based on what's installed
-    enh_options = ["None"]
-    if DF_AVAILABLE:
-        enh_options.append("DeepFilter  (torch)")
-    else:
-        enh_options.append("DeepFilter  [pip install deepfilternet]")
-    if SHERPA_AVAILABLE:
-        enh_options += ["DPDFNet  (Sherpa-ONNX)", "GTCRN  (Sherpa-ONNX, fastest)"]
-    else:
-        enh_options += ["DPDFNet  [pip install sherpa-onnx]",
-                        "GTCRN  [pip install sherpa-onnx]"]
-    sdpath_ok = os.path.isfile(_SPEECHDENOISER_PATH)
-    enh_options.append("SpeechDenoiser ONNX" if sdpath_ok
-                       else "SpeechDenoiser ONNX  [model not found]")
-
-    enh_selector = Combobox(enh_row, values=enh_options, width=32,
-                            state="readonly", font=("Segoe UI", 8),
-                            style='App.TCombobox')
-    enh_selector.set("None")
-    enh_selector.pack(side="left")
-    enh_selector.bind("<<ComboboxSelected>>", lambda e: set_enhancer())
-
-    # Row 2 — OpenVINO toggle (affects ONNX-based enhancers only)
-    ov_row = Frame(enh_card, bg=CARD)
-    ov_row.pack(fill="x", padx=10, pady=(0, 4))
-    ov_var = BooleanVar(value=False)
-    ov_lbl = "OpenVINO acceleration  (AVX2/AVX-512, ONNX enhancers only)"
-    if not OV_AVAILABLE:
-        ov_lbl += "  [pip install onnxruntime-openvino]"
-    Checkbutton(ov_row, text=ov_lbl,
-                variable=ov_var, command=set_openvino,
-                state="normal" if OV_AVAILABLE else "disabled",
-                **ck_kw).pack(side="left")
-
-    # Row 3 — Spectral transient gate
-    tgate_row = Frame(enh_card, bg=CARD)
-    tgate_row.pack(fill="x", padx=10, pady=(0, 7))
-    tgate_var = BooleanVar(value=False)
-    Checkbutton(tgate_row,
-                text="Spectral transient gate  (suppresses residual guitar/piano taps above 2 kHz)",
-                variable=tgate_var, command=set_transient_gate,
-                **ck_kw).pack(side="left")
-
-    # ── STATUS ───────────────────────────────────────────────────────────────
-    status_bar = Frame(root, bg='#0e1a2e', highlightthickness=1,
-                       highlightbackground=BORDER)
-    status_bar.pack(fill="x", padx=16, pady=(8, 0))
-    status_label = Label(status_bar, text="  Ready \u2014 add files to begin",
-                         font=("Segoe UI", 9), bg='#0e1a2e', fg=GREEN, anchor="w")
-    status_label.pack(fill="x", padx=4, pady=5)
-
-    # ── FILE BUTTONS ─────────────────────────────────────────────────────────
-    btn_row = Frame(root, bg=BG)
-    btn_row.pack(fill="x", padx=16, pady=(8, 0))
-    b1 = Button(btn_row, text="Browse Files", bg=ACCENT2, fg="white",
-                font=("Segoe UI", 9, "bold"), pady=7, relief="flat", cursor="hand2",
-                activebackground='#2f59c0', activeforeground='white', bd=0)
-    b1.pack(side="left", expand=True, fill="x", padx=(0, 6))
-    b2 = Button(btn_row, text="Remove Selected", bg='#5c1a1a', fg='#e8a0a0',
-                font=("Segoe UI", 9, "bold"), pady=7, relief="flat", cursor="hand2",
-                activebackground='#7a1f1f', activeforeground='white', bd=0)
-    b2.pack(side="right", expand=True, fill="x")
-
-    # ── QUEUE ────────────────────────────────────────────────────────────────
-    section_label("PROCESSING QUEUE")
-    listboxframe = mk_card(root)
-    listboxframe.pack(fill="both", expand=True, padx=16)
-    scrollbar_y = Scrollbar(listboxframe, orient="vertical",
-                            bg=BORDER, troughcolor=CARD, activebackground=ACCENT,
-                            width=10)
-    listbox = Listbox(listboxframe, yscrollcommand=scrollbar_y.set, selectmode="multiple",
-                      height=4, font=("Segoe UI", 9), bg=CARD, fg=TEXT,
-                      selectbackground='#1c2a4a', selectforeground=ACCENT,
-                      relief="flat", bd=0, activestyle='none', highlightthickness=0)
-    scrollbar_y.config(command=listbox.yview)
-    scrollbar_y.pack(side="right", fill="y", pady=1)
-    listbox.pack(side="left", fill="both", expand=True, padx=8, pady=6)
-
-    inprogressframe = Frame(root, bg=BG)
-    inprogressframe.pack(fill="x", padx=16)
-
-    # ── PROGRESS ─────────────────────────────────────────────────────────────
-    section_label("PROGRESS")
-    progress = Progressbar(root, orient="horizontal", mode='determinate',
-                           style='App.Horizontal.TProgressbar')
-    progress.pack(fill="x", padx=16)
-
-    # ── ACTION BUTTONS ───────────────────────────────────────────────────────
-    action_row = Frame(root, bg=BG)
-    action_row.pack(fill="x", padx=16, pady=(8, 0))
-    f1 = Button(action_row, text="Start Processing", bg='#145233', fg='#7de8b8',
-                font=("Segoe UI", 10, "bold"), pady=9, relief="flat", cursor="hand2",
-                activebackground='#0f3d26', activeforeground='white', bd=0)
-    f1.pack(side="left", expand=True, fill="x", padx=(0, 6))
-    a1 = Button(action_row, text="Clear Queue", bg='#1e1410', fg='#c8a96e',
-                font=("Segoe UI", 10, "bold"), pady=9, relief="flat", cursor="hand2",
-                activebackground='#2a1c0e', activeforeground='white', bd=0)
-    a1.pack(side="right", expand=True, fill="x")
-
-    # ── LOG ──────────────────────────────────────────────────────────────────
-    section_label("PROCESSING LOG")
-    log_widget = ScrolledText(root, height=5, font=("Consolas", 8),
-                              bg='#07070d', fg='#3eb87a', relief="flat", bd=0,
-                              insertbackground=ACCENT, selectbackground='#1c2a4a',
-                              highlightthickness=1, highlightbackground=BORDER)
-    log_widget.pack(fill="both", expand=True, padx=16, pady=(0, 12))
-
-    sys.stdout = PrintLogger(log_widget)
-
-    # The globals' defaults don't know which separators are installed; make
-    # them match the option the selector is actually showing.
-    if sep_options:
-        set_separator()
-
-FAST_SEP_BEST  = "Voc_FT \u00b7 fast engine   (Best)"
-FAST_SEP_QUICK = "Voc_FT \u00b7 fast engine, low overlap   (Faster)"
-FAST_SEP_MRX   = "MRX dialogue   (Fastest \u00b7 lower quality)"
-FX_OFF   = "Off"
-FX_MRX   = "Fast  (MRX, some music bleed)"
-FX_CDX23 = "Quality  (CDX23, cleaner, slower)"
+FAST_SEP_BEST  = "Best quality  (recommended)"
+FAST_SEP_QUICK = "Faster  (about 20% quicker, slightly less accurate)"
+FAST_SEP_MRX   = "Fastest  (lower quality)"
+FX_OFF   = "Remove"
+FX_MRX   = "Keep, fast"
+FX_CDX23 = "Keep, best quality"
 # Effects level relative to the original mix. Raising it raises any music
 # that leaked into the effects by the same amount. Picking an effects
 # model resets the level to that model's default: +3 dB for MRX, to make up
@@ -2438,6 +2229,442 @@ FX_CDX23 = "Quality  (CDX23, cleaner, slower)"
 FX_LEVELS = {"Quieter  (-6 dB)": -6.0, "Normal": 0.0,
              "Louder  (+3 dB)": 3.0, "Much louder  (+6 dB)": 6.0}
 FX_LEVEL_DEFAULT = {"mrx": "Louder  (+3 dB)", "cdx23": "Normal"}
+
+# What happens to the music the separator took out. Levels are below the
+# original mix; the A4 audit (docs/A4_RESULTS.md) measured music suppression
+# landing within 0.3 dB of the chosen level.
+MUSIC_REMOVE = "Remove it"
+MUSIC_LOW    = "Turn down a lot"
+MUSIC_HIGH   = "Turn down a little"
+MUSIC_LEVELS = {MUSIC_REMOVE: None, MUSIC_LOW: -20.0, MUSIC_HIGH: -12.0}
+
+MODE_LABELS = {"Normal  (gentle)": "normal", "Balanced  (recommended)": "balanced",
+               "Aggressive  (strongest)": "aggressive"}
+
+PREVIEW_SECONDS = 20
+
+
+def _settings_path():
+    if os.name == "nt":
+        base = os.environ.get("APPDATA") or os.path.expanduser("~")
+    else:
+        base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    return os.path.join(base, "music-assassin", "settings.json")
+
+
+def load_settings(path=None):
+    """The saved settings dict, or {} if there is none or it is unreadable.
+    Never raises: a damaged settings file must not stop the app starting."""
+    import json
+    try:
+        with open(path or _settings_path(), "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_settings(values, path=None):
+    """Write the settings dict. A failure is logged, not shown: not being
+    able to remember a choice is not worth interrupting someone's work."""
+    import json
+    path = path or _settings_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(values, f, indent=2)
+        os.replace(tmp, path)
+        return True
+    except OSError as e:
+        _log.warning(f"Settings not saved: {e}")
+        return False
+
+
+def pick_valid(saved, key, options, default):
+    """saved[key] if it is one of `options`, else `default` -- a saved label
+    can name something no longer installed or since renamed."""
+    v = saved.get(key)
+    return v if v in options else default
+
+
+# ============================================================================
+# GUI SETUP
+# ============================================================================
+
+# Palette shared with music-assassin-live (assassin_live/ui/app.py).
+BG, PANEL, HAIR = "#0d0d10", "#17171c", "#24242c"
+FIELD, FIELD_EDGE = "#1f1f26", "#2f2f38"
+TEXT, SUBTEXT, FAINT, TRACK = "#f2f2f4", "#87878f", "#57575f", "#2b2b32"
+ON_COLOR, ON_INK, RED, AMBER = "#2ecc71", "#08301b", "#ef4056", "#e0a458"
+UI_FAMILIES = ("Segoe UI", "Inter", "Cantarell", "Ubuntu", "Noto Sans", "DejaVu Sans")
+MONO_FAMILIES = ("Consolas", "JetBrains Mono", "Fira Mono", "Ubuntu Mono", "DejaVu Sans Mono")
+
+# Everything setFrames builds that the handlers below need to reach.
+ui = {}
+
+
+def setFrames(root):
+    """The window: three numbered steps (add files, choose, run) with the
+    technical settings folded away under Advanced."""
+    global progress, status_label, queue_view, log_widget
+    ui.clear()
+    import tkinter as tk
+    import tkinter.font as tkfont
+    from tkinter import StringVar
+    from ma_widgets import (Dropdown, PillButton, ProgressBar, QueueList,
+                            Segmented, Switch)
+
+    scale = max(1.0, min(2.5, root.winfo_fpixels("1i") / 96.0))
+    px = lambda v: int(round(v * scale))   # noqa: E731
+    fams = set(tkfont.families(root))
+    ui_fam = next((f for f in UI_FAMILIES if f in fams), "TkDefaultFont")
+    mono_fam = next((f for f in MONO_FAMILIES if f in fams), "TkFixedFont")
+    f_body = tkfont.Font(root=root, family=ui_fam, size=10)
+    f_bold = tkfont.Font(root=root, family=ui_fam, size=10, weight="bold")
+    f_small = tkfont.Font(root=root, family=ui_fam, size=9)
+    f_title = tkfont.Font(root=root, family=ui_fam, size=18, weight="bold")
+    f_step = tkfont.Font(root=root, family=ui_fam, size=11, weight="bold")
+    f_mono = tkfont.Font(root=root, family=mono_fam, size=9)
+    ui["px"] = px
+
+    saved = load_settings()
+    ui["saved"] = saved
+
+    W = px(760)
+    PAD = px(24)
+    INNER = W - 2 * PAD
+    root.configure(background=BG)
+    tk.Frame(root, bg=BG, width=W, height=1).pack()      # fixes the window width
+
+    # -- header ---------------------------------------------------------------
+    head = tk.Frame(root, bg=BG)
+    head.pack(fill="x", padx=PAD, pady=(px(18), px(2)))
+    tk.Label(head, text="Music Assassin", font=f_title, bg=BG, fg=TEXT).pack(side="left")
+    tk.Label(head, text=f"v{APP_VERSION}", font=f_small, bg=BG, fg=FAINT).pack(
+        side="left", padx=(px(8), 0), pady=(px(8), 0))
+    tk.Label(root, text="Take the music out of a video or recording and keep the voices.",
+             font=f_body, bg=BG, fg=SUBTEXT, anchor="w").pack(fill="x", padx=PAD, pady=(0, px(12)))
+
+    def card(parent=None, pady=(0, px(10))):
+        c = tk.Frame(parent or root, bg=PANEL, highlightthickness=1, highlightbackground=HAIR)
+        c.pack(fill="x", padx=PAD, pady=pady)
+        return c
+
+    def step_title(c, number, text):
+        r = tk.Frame(c, bg=PANEL)
+        r.pack(fill="x", padx=px(16), pady=(px(12), px(6)))
+        tk.Label(r, text=str(number), font=f_bold, bg=ON_COLOR, fg=ON_INK, width=2).pack(side="left")
+        tk.Label(r, text=text, font=f_step, bg=PANEL, fg=TEXT).pack(side="left", padx=(px(10), 0))
+        return r
+
+    def setting_row(parent, label, hint=None):
+        """Label and hint on the left, the control on the right."""
+        r = tk.Frame(parent, bg=PANEL)
+        r.pack(fill="x", padx=px(16), pady=(0, px(10)))
+        left = tk.Frame(r, bg=PANEL)
+        left.pack(side="left", anchor="n")
+        tk.Frame(left, bg=PANEL, width=px(170), height=1).pack()   # column width
+        tk.Label(left, text=label, font=f_bold, bg=PANEL, fg=TEXT, anchor="w").pack(fill="x")
+        if hint:
+            tk.Label(left, text=hint, font=f_small, bg=PANEL, fg=SUBTEXT, anchor="w",
+                     justify="left", wraplength=px(160)).pack(fill="x")
+        right = tk.Frame(r, bg=PANEL)
+        right.pack(side="left", fill="x", expand=True)
+        return right
+
+    ctl_w = INNER - px(32) - px(170) - px(8)
+    seg_kw = dict(bg=PANEL, track=FIELD, accent=ON_COLOR, fg_on=ON_INK, fg_off=SUBTEXT,
+                  font=f_bold, width=ctl_w, height=px(34))
+    dd_kw = dict(bg=PANEL, field=FIELD, border=FIELD_EDGE, fg=TEXT, muted=SUBTEXT,
+                 accent=ON_COLOR, font=f_body, width=ctl_w, height=px(32))
+
+    def switch_row(parent, label, var, hint=None, command=None):
+        r = tk.Frame(parent, bg=PANEL)
+        r.pack(fill="x", padx=px(16), pady=(0, px(8)))
+        sw = Switch(r, bg=PANEL, track=TRACK, accent=ON_COLOR, knob_off="#6f6f79",
+                    knob_on=ON_INK, value=bool(var.get()), width=px(40), height=px(22),
+                    command=lambda v: var.set(bool(v)))
+        sw.pack(side="left")
+        txt = tk.Frame(r, bg=PANEL)
+        txt.pack(side="left", padx=(px(12), 0), fill="x", expand=True)
+        lbl = tk.Label(txt, text=label, font=f_body, bg=PANEL, fg=TEXT, anchor="w")
+        lbl.pack(fill="x")
+        if hint:
+            tk.Label(txt, text=hint, font=f_small, bg=PANEL, fg=SUBTEXT, anchor="w",
+                     justify="left", wraplength=ctl_w).pack(fill="x")
+        var.trace_add("write", lambda *_: sw.set(bool(var.get())))
+        sw.label = lbl
+        return sw
+
+    # -- variables ------------------------------------------------------------
+    sep_options = []
+    if FAST_ENGINE_AVAILABLE:
+        sep_options += [FAST_SEP_BEST, FAST_SEP_QUICK, FAST_SEP_MRX]
+    if AUDIO_SEPARATOR_AVAILABLE:
+        sep_options += ["MDX-Net Voc_FT   (Vocals · Fast · 66 MB)",
+                        "MDX-Net Kim_v2   (Vocals · Best CPU · 130 MB)"]
+    if DEMUCS_AVAILABLE:
+        sep_options += ["DEMUCS htdemucs  (Fast)", "DEMUCS htdemucs_ft  (Quality)",
+                        "DEMUCS mdx_extra  (Best)"]
+    if SPLEETER_AVAILABLE:
+        sep_options.append("Spleeter  (4-Stems)")
+
+    fx_options = [FX_OFF]
+    if FAST_ENGINE_AVAILABLE:
+        fx_options.append(FX_MRX)
+        if fast_separation.dme_available("cdx23"):
+            fx_options.append(FX_CDX23)
+
+    enh_options = ["None"]
+    enh_options.append("DeepFilter  (torch)" if DF_AVAILABLE
+                       else "DeepFilter  [pip install deepfilternet]")
+    if SHERPA_AVAILABLE:
+        enh_options += ["DPDFNet  (Sherpa-ONNX)", "GTCRN  (Sherpa-ONNX, fastest)"]
+    else:
+        enh_options += ["DPDFNet  [pip install sherpa-onnx]", "GTCRN  [pip install sherpa-onnx]"]
+    enh_options.append("SpeechDenoiser ONNX" if os.path.isfile(_SPEECHDENOISER_PATH)
+                       else "SpeechDenoiser ONNX  [model not found]")
+
+    global separator_selector, mode_selector, fx_selector, fx_level_selector, music_selector
+    global enh_selector, quantize_var, vad_var, ov_var, tgate_var, stereo_var
+    separator_selector = StringVar(value=pick_valid(saved, "separator", sep_options,
+                                                    sep_options[0] if sep_options else ""))
+    mode_selector = StringVar(value=pick_valid(saved, "mode", list(MODE_LABELS), "Balanced  (recommended)"))
+    music_selector = StringVar(value=pick_valid(saved, "music", list(MUSIC_LEVELS), MUSIC_REMOVE))
+    fx_selector = StringVar(value=pick_valid(saved, "fx", fx_options, FX_OFF))
+    fx_level_selector = StringVar(value=pick_valid(saved, "fx_level", list(FX_LEVELS), "Normal"))
+    enh_selector = StringVar(value=pick_valid(saved, "enhancer", enh_options, "None"))
+    stereo_var = BooleanVar(value=bool(saved.get("stereo", True)))
+    quantize_var = BooleanVar(value=bool(saved.get("quantize", True)))
+    vad_var = BooleanVar(value=bool(saved.get("vad", False)) and VAD_AVAILABLE)
+    ov_var = BooleanVar(value=bool(saved.get("openvino", False)) and OV_AVAILABLE)
+    tgate_var = BooleanVar(value=bool(saved.get("tgate", False)))
+
+    # -- step 1: files --------------------------------------------------------
+    c1 = card()
+    hdr1 = step_title(c1, 1, "Add your files")
+    add_btn = PillButton(hdr1, bg=PANEL, font=f_bold, width=px(120), height=px(32))
+    add_btn.pack(side="right")
+    clear_lbl = tk.Label(hdr1, text="Clear list", font=f_small, bg=PANEL, fg=SUBTEXT, cursor="hand2")
+    clear_lbl.pack(side="right", padx=(0, px(14)))
+    queue_view = QueueList(
+        c1, bg=PANEL, row="#1b1b21", hairline=HAIR, fg=TEXT, muted=SUBTEXT, accent=ON_COLOR,
+        good=ON_COLOR, bad=RED, font=f_body, small=f_small, width=INNER - px(32),
+        height=px(30) * 4, on_remove=_queue_removed,
+        empty_text="No files yet.\nPress \"Add files\" to choose videos or audio.")
+    queue_view.pack(padx=px(16), pady=(0, px(14)))
+
+    # -- step 2: choices ------------------------------------------------------
+    c2 = card()
+    step_title(c2, 2, "Choose what you want")
+
+    r = setting_row(c2, "Music", "What happens to the background music")
+    Segmented(r, variable=music_selector,
+              options=[(MUSIC_REMOVE, "Remove it"), (MUSIC_LOW, "Turn down a lot"),
+                       (MUSIC_HIGH, "Turn down a little")], **seg_kw).pack(anchor="w")
+
+    r = setting_row(c2, "Sound effects", "Footsteps, doors, ambience")
+    fx_seg = Segmented(r, variable=fx_selector, options=[(o, o) for o in fx_options], **seg_kw)
+    fx_seg.pack(anchor="w")
+    fx_seg.set_enabled(len(fx_options) > 1)
+
+    if FAST_ENGINE_AVAILABLE:
+        r = setting_row(c2, "Quality", "Best is recommended")
+        Segmented(r, variable=separator_selector,
+                  options=[(FAST_SEP_BEST, "Best"), (FAST_SEP_QUICK, "Faster"),
+                           (FAST_SEP_MRX, "Fastest")], **seg_kw).pack(anchor="w")
+
+    switch_row(c2, "Keep stereo sound", stereo_var,
+               "Uses more memory. Long files switch to mono by themselves if needed.")
+    tk.Frame(c2, bg=PANEL, height=px(4)).pack()
+
+    # -- advanced (its own window, so the main one stays short) ----------------
+    adv_head = tk.Frame(root, bg=BG, cursor="hand2")
+    adv_head.pack(fill="x", padx=PAD, pady=(0, px(6)))
+    adv_lbl = tk.Label(adv_head, text="Advanced settings...", font=f_body, bg=BG, fg=SUBTEXT,
+                       cursor="hand2")
+    adv_lbl.pack(side="left")
+
+    ADV_W = px(600)
+    adv_win = tk.Toplevel(root)
+    adv_win.withdraw()
+    adv_win.title("Advanced settings")
+    adv_win.configure(background=BG)
+    adv_win.resizable(False, False)
+    adv_win.transient(root)
+    adv_win.protocol("WM_DELETE_WINDOW", adv_win.withdraw)
+    tk.Frame(adv_win, bg=BG, width=ADV_W, height=1).pack()
+    tk.Label(adv_win, text="Advanced settings", font=f_step, bg=BG, fg=TEXT, anchor="w").pack(
+        fill="x", padx=PAD, pady=(px(16), px(2)))
+    tk.Label(adv_win, text="The defaults suit most files. Changes are saved automatically.",
+             font=f_small, bg=BG, fg=SUBTEXT, anchor="w").pack(fill="x", padx=PAD, pady=(0, px(10)))
+    adv = card(adv_win)
+    adv_ctl_w = ADV_W - 2 * PAD - px(32) - px(170) - px(8)
+    dd_kw = dict(dd_kw, width=adv_ctl_w)
+    ctl_w = adv_ctl_w            # wraps the switch hints below
+
+    r = setting_row(adv, "Separation engine")
+    sep_dd = Dropdown(r, variable=separator_selector, values=sep_options, **dd_kw)
+    sep_dd.pack(anchor="w")
+    if not sep_options:
+        tk.Label(r, text="No separation engine is installed", font=f_small, bg=PANEL, fg=RED).pack(anchor="w")
+    r = setting_row(adv, "Strength", "How hard it works to remove music")
+    Dropdown(r, variable=mode_selector, values=list(MODE_LABELS), **dd_kw).pack(anchor="w")
+    r = setting_row(adv, "Voice cleanup", "Reduces leftover noise")
+    Dropdown(r, variable=enh_selector, values=enh_options, **dd_kw).pack(anchor="w")
+    r = setting_row(adv, "Effects volume", "Only when effects are kept")
+    fx_lvl_dd = Dropdown(r, variable=fx_level_selector, values=list(FX_LEVELS), **dd_kw)
+    fx_lvl_dd.pack(anchor="w")
+    ui["fx_level_dd"] = fx_lvl_dd
+    sw_vad = switch_row(adv, "Silence gaps between speech", vad_var,
+                        "Mutes everything that is not a voice. Needs PyTorch." if VAD_AVAILABLE
+                        else "Needs PyTorch, which is not installed.")
+    sw_vad.set_enabled(VAD_AVAILABLE)
+    switch_row(adv, "Compress the model (INT8)", quantize_var, "About 2x faster for DEMUCS htdemucs.")
+    sw_ov = switch_row(adv, "OpenVINO acceleration", ov_var,
+                       "Speeds up the ONNX voice cleanup on Intel CPUs." if OV_AVAILABLE
+                       else "Not installed: pip install onnxruntime-openvino")
+    sw_ov.set_enabled(OV_AVAILABLE)
+    switch_row(adv, "Remove leftover taps above 2 kHz", tgate_var,
+               "Suppresses residual guitar and piano taps.")
+    tk.Frame(adv, bg=PANEL, height=px(4)).pack()
+    done_row = tk.Frame(adv_win, bg=BG)
+    done_row.pack(fill="x", padx=PAD, pady=(0, px(16)))
+    done_btn = PillButton(done_row, bg=BG, font=f_bold, width=px(100), height=px(32), command=adv_win.withdraw)
+    done_btn.pack(side="right")
+    done_btn.paint("Done", fill=ON_COLOR, fg=ON_INK)
+
+    def toggle_advanced(_e=None):
+        if adv_win.state() == "withdrawn":
+            adv_win.deiconify()
+            adv_win.lift()
+            x = root.winfo_rootx() + (root.winfo_width() - ADV_W) // 2
+            adv_win.geometry(f"+{max(0, x)}+{root.winfo_rooty() + px(40)}")
+        else:
+            adv_win.withdraw()
+    ui["toggle_advanced"] = toggle_advanced
+    adv_head.bind("<Button-1>", toggle_advanced)
+    adv_lbl.bind("<Button-1>", toggle_advanced)
+
+    # -- step 3: run ----------------------------------------------------------
+    c3 = card()
+    hdr3 = step_title(c3, 3, "Start")
+    start_btn = PillButton(hdr3, bg=PANEL, font=f_bold, width=px(120), height=px(32))
+    start_btn.pack(side="right")
+    preview_btn = PillButton(hdr3, bg=PANEL, font=f_bold, width=px(150), height=px(32))
+    preview_btn.pack(side="right", padx=(0, px(10)))
+    progress = ProgressBar(c3, bg=PANEL, track=TRACK, fill=ON_COLOR, width=INNER - px(32), height=px(8))
+    progress.pack(padx=px(16), pady=(px(2), px(6)), fill="x")
+    status_label = tk.Label(c3, text="Ready. Add files to begin.", font=f_body, bg=PANEL, fg=SUBTEXT,
+                            anchor="w", justify="left", wraplength=INNER - px(32))
+    status_label.pack(fill="x", padx=px(16), pady=(0, px(4)))
+    prev_row = tk.Frame(c3, bg=PANEL)
+    ui["prev_row"] = prev_row
+    tk.Label(prev_row, text="Preview ready:", font=f_small, bg=PANEL, fg=SUBTEXT).pack(side="left")
+    hear_orig = tk.Label(prev_row, text="Hear original", font=f_bold, bg=PANEL, fg=ON_COLOR, cursor="hand2")
+    hear_orig.pack(side="left", padx=(px(10), px(14)))
+    hear_res = tk.Label(prev_row, text="Hear result", font=f_bold, bg=PANEL, fg=ON_COLOR, cursor="hand2")
+    hear_res.pack(side="left")
+    hear_orig.bind("<Button-1>", lambda _e: _open_with_default_app(ui.get("prev_orig")))
+    hear_res.bind("<Button-1>", lambda _e: _open_with_default_app(ui.get("prev_result")))
+    tk.Frame(c3, bg=PANEL, height=px(8)).pack()
+
+    # -- details (log) --------------------------------------------------------
+    det_head = tk.Frame(root, bg=BG, cursor="hand2")
+    det_head.pack(fill="x", padx=PAD, pady=(0, px(6)))
+    det_lbl = tk.Label(det_head, text="▸  Show details", font=f_body, bg=BG, fg=SUBTEXT, cursor="hand2")
+    det_lbl.pack(side="left")
+    log_frame = tk.Frame(root, bg=BG)
+    log_widget = ScrolledText(log_frame, height=9, font=f_mono, bg="#0a0a0d", fg="#7fd6a1",
+                              relief="flat", bd=0, insertbackground=ON_COLOR,
+                              selectbackground=TRACK, highlightthickness=1, highlightbackground=HAIR)
+    log_widget.vbar.configure(bg=TRACK, troughcolor=BG, activebackground=FAINT, relief="flat",
+                              bd=0, highlightthickness=0, width=px(10))
+    log_widget.pack(fill="both", expand=True)
+
+    def toggle_details(_e=None):
+        shown = not ui.get("det_shown", False)
+        ui["det_shown"] = shown
+        det_lbl.config(text=("▾" if shown else "▸") + "  " + ("Hide details" if shown else "Show details"))
+        if shown:
+            log_frame.pack(fill="both", expand=True, padx=PAD, pady=(0, px(14)))
+        else:
+            log_frame.pack_forget()
+    ui["toggle_details"] = toggle_details
+    det_head.bind("<Button-1>", toggle_details)
+    det_lbl.bind("<Button-1>", toggle_details)
+    tk.Frame(root, bg=BG, height=px(8)).pack()
+
+    sys.stdout = PrintLogger(log_widget)
+
+    ui.update(add_btn=add_btn, start_btn=start_btn, preview_btn=preview_btn, clear_lbl=clear_lbl,
+              f_bold=f_bold, fx_seg=fx_seg)
+    add_btn.command = get_file_path
+    start_btn.command = on_start_clicked
+    preview_btn.command = make_preview
+    clear_lbl.bind("<Button-1>", lambda _e: clear_queue())
+    refresh_buttons()
+
+
+def refresh_buttons():
+    """Repaint the three action buttons for the current state (idle / running)."""
+    running = bool(do)
+    secondary = dict(fill=FIELD, fg=TEXT, outline=FIELD_EDGE)
+    ui["add_btn"].paint("Add files", **secondary)
+    ui["preview_btn"].paint(f"Preview {PREVIEW_SECONDS} s", fill=FIELD, fg=SUBTEXT if running else TEXT,
+                            outline=FIELD_EDGE, enabled=not running, cursor="" if running else "hand2")
+    if running:
+        stopping = ui.get("stopping", False)
+        ui["start_btn"].paint("Stopping..." if stopping else "Stop", fill="#3a1d24", fg="#ff9aa8",
+                              enabled=not stopping, cursor="" if stopping else "hand2")
+    else:
+        ui["start_btn"].paint("Start", fill=ON_COLOR, fg=ON_INK)
+
+
+def _persist_settings(*_):
+    if not ui.get("ready"):
+        return
+    save_settings({
+        "separator": separator_selector.get(), "mode": mode_selector.get(),
+        "music": music_selector.get(), "fx": fx_selector.get(),
+        "fx_level": fx_level_selector.get(), "enhancer": enh_selector.get(),
+        "stereo": bool(stereo_var.get()), "quantize": bool(quantize_var.get()),
+        "vad": bool(vad_var.get()), "openvino": bool(ov_var.get()),
+        "tgate": bool(tgate_var.get()),
+    })
+
+
+def _free_unused_models():
+    """Drop every cached model the current separator choice won't use.
+
+    The caches exist so a batch doesn't reload weights per file, but they
+    were never emptied: trying Voc_FT, then DEMUCS, then MDX-Net left all
+    three resident (several GB). Called when the separator changes, so what
+    stays is what the next run needs. The fast engine's MRX/CDX23 nets are
+    kept with it, since keep-sound-effects uses them.
+    """
+    if separator_choice not in ('fast_mdx', 'mrx') and FAST_ENGINE_AVAILABLE:
+        fast_separation._NET_CACHE.clear()
+        fast_separation._TORCH_CACHE.clear()
+    if separator_choice != 'demucs':
+        _MODEL_CACHE.clear()
+    else:
+        for k in [k for k in _MODEL_CACHE if not k.startswith(f"{model_choice}:")]:
+            del _MODEL_CACHE[k]
+    if separator_choice != 'audio_separator':
+        _AUDIO_SEP_CACHE.clear()
+    else:
+        for k in [k for k in _AUDIO_SEP_CACHE if k != model_choice]:
+            del _AUDIO_SEP_CACHE[k]
+    gc.collect()
+    try:
+        from torch.cuda import is_available as _cuda_ok, empty_cache as _cuda_empty
+        if _cuda_ok():
+            _cuda_empty()
+    except Exception:
+        pass
+
 
 def set_separator():
     """Update separator engine + model choice"""
@@ -2447,45 +2674,50 @@ def set_separator():
         separator_choice = "fast_mdx"
         model_choice = "UVR-MDX-NET-Voc_FT.onnx"
         fast_overlap = 0.25 if sep == FAST_SEP_BEST else 0.1
-        update_status(f"Voc_FT fast engine (overlap {fast_overlap})")
         print(f"Separator: Voc_FT fast engine  |  overlap: {fast_overlap}")
     elif sep == FAST_SEP_MRX:
         separator_choice = "mrx"
-        update_status("MRX dialogue separation")
         print("Separator: MRX (dialogue / music / effects)")
     elif "MDX-Net" in sep:
         separator_choice = "audio_separator"
         model_choice = "UVR-MDX-NET-Voc_FT.onnx" if "Voc_FT" in sep else "Kim_Vocal_2.onnx"
-        update_status(f"MDX-Net: {model_choice}")
         print(f"Separator: MDX-Net  |  model: {model_choice}")
     elif "DEMUCS" in sep:
         separator_choice = "demucs"
         model_choice = sep.split()[1]
-        update_status(f"DEMUCS: {model_choice}")
         print(f"Separator: DEMUCS  |  model: {model_choice}")
     else:
         separator_choice = "spleeter"
-        update_status("Separator: SPLEETER")
         print("Separator: SPLEETER")
+    _free_unused_models()
 
-def set_fx():
+
+def set_fx(reset_level=True):
     """Keep sound effects: off | mrx | cdx23"""
     global fx_choice
     sel = fx_selector.get()
     fx_choice = {FX_MRX: "mrx", FX_CDX23: "cdx23"}.get(sel, "off")
-    fx_level_selector.configure(state="disabled" if fx_choice == "off" else "readonly")
-    if fx_choice != "off":
+    if "fx_level_dd" in ui:
+        ui["fx_level_dd"].set_enabled(fx_choice != "off")
+    if fx_choice != "off" and reset_level:
         fx_level_selector.set(FX_LEVEL_DEFAULT[fx_choice])
-        set_fx_level()
+    set_fx_level()
     print(f"Keep sound effects: {fx_choice}")
-    update_status(f"Keep sound effects: {sel}")
+
 
 def set_fx_level():
     global fx_level_db
-    sel = fx_level_selector.get()
-    fx_level_db = FX_LEVELS.get(sel, 0.0)
+    fx_level_db = FX_LEVELS.get(fx_level_selector.get(), 0.0)
     print(f"Effects level: {fx_level_db:+.0f} dB")
-    update_status(f"Effects level: {sel}")
+
+
+def set_music():
+    """What to do with the music: remove it, or add it back quietly."""
+    global music_level_db
+    music_level_db = MUSIC_LEVELS.get(music_selector.get())
+    print("Music: removed" if music_level_db is None
+          else f"Music: turned down to {music_level_db:+.0f} dB")
+
 
 def set_quantize():
     """Toggle INT8 quantization — clears cache so the model reloads accordingly"""
@@ -2493,13 +2725,13 @@ def set_quantize():
     quantize_enabled = bool(quantize_var.get())
     _MODEL_CACHE.clear()
     print(f"INT8 quantize: {quantize_enabled}  (model cache cleared)")
-    update_status(f"INT8 quantize: {quantize_enabled}")
+
 
 def set_vad():
     global vad_enabled
     vad_enabled = bool(vad_var.get())
     print(f"VAD gate: {vad_enabled}")
-    update_status(f"VAD gate: {'ON' if vad_enabled else 'OFF'}")
+
 
 _ENH_LABEL_MAP = {
     'None': 'none',
@@ -2509,6 +2741,7 @@ _ENH_LABEL_MAP = {
     'SpeechDenoiser': 'speechdenoiser',
 }
 
+
 def set_enhancer():
     global enhancer_choice
     sel = enh_selector.get().split('  ')[0].strip()   # strip install hints
@@ -2516,7 +2749,7 @@ def set_enhancer():
     # Clear Sherpa session cache when switching models
     _sherpa_session_cache.clear()
     print(f"Enhancer: {enhancer_choice}")
-    update_status(f"Enhancer: {sel}")
+
 
 def set_openvino():
     global openvino_enabled, _speechdenoiser_session
@@ -2525,34 +2758,51 @@ def set_openvino():
     _sherpa_session_cache.clear()
     _speechdenoiser_session = None
     print(f"OpenVINO: {openvino_enabled}")
-    update_status(f"OpenVINO: {'ON' if openvino_enabled else 'OFF'}")
+
 
 def set_transient_gate():
     global transient_gate_enabled
     transient_gate_enabled = bool(tgate_var.get())
     print(f"Transient gate: {transient_gate_enabled}")
-    update_status(f"Transient gate: {'ON' if transient_gate_enabled else 'OFF'}")
+
 
 def set_stereo():
     global stereo_output
     stereo_output = bool(stereo_var.get())
     print(f"Stereo output: {stereo_output}")
-    update_status(f"Output: {'stereo (stereo sources)' if stereo_output else 'mono'}")
+
 
 def set_mode():
     """Update processing mode"""
     global processing_mode
-    mode = mode_selector.get()
-    processing_mode = mode.lower()
-    update_status(f"Mode: {mode}")
+    processing_mode = MODE_LABELS.get(mode_selector.get(), "balanced")
     print(f"Processing mode: {processing_mode}")
+
+
+def apply_settings():
+    """Push every control's value into the module globals, then start saving
+    changes. Runs once after the window is built (the controls already hold
+    the remembered values); after that each change applies and saves itself."""
+    set_separator(); set_mode(); set_stereo(); set_quantize(); set_vad()
+    set_enhancer(); set_openvino(); set_transient_gate(); set_music()
+    set_fx(reset_level=False)
+    for var, fn in ((separator_selector, set_separator), (mode_selector, set_mode),
+                    (music_selector, set_music), (fx_selector, set_fx),
+                    (fx_level_selector, set_fx_level), (enh_selector, set_enhancer),
+                    (stereo_var, set_stereo), (quantize_var, set_quantize), (vad_var, set_vad),
+                    (ov_var, set_openvino), (tgate_var, set_transient_gate)):
+        var.trace_add("write", lambda *_a, fn=fn: fn())
+        var.trace_add("write", _persist_settings)
+    ui["ready"] = True
+
+
+# ============================================================================
+# FILES, QUEUE, PREVIEW
+# ============================================================================
 
 def get_file_path():
     """Browse files"""
-    global files, listbox, do, root
-
-    if do == 1:
-        do = 0
+    global files
 
     selected = []
 
@@ -2562,7 +2812,7 @@ def get_file_path():
         result = subprocess.run(
             ["zenity", "--file-selection", "--multiple",
              "--title=Select Audio/Video Files",
-             "--file-filter=Media Files (mp4 mp3 wav avi mkv flac) | *.mp4 *.mp3 *.wav *.avi *.mkv *.flac",
+             "--file-filter=Media Files (mp4 mp3 wav avi mkv flac m4a ogg) | *.mp4 *.mp3 *.wav *.avi *.mkv *.flac *.m4a *.ogg",
              "--file-filter=All Files | *"],
             capture_output=True, text=True
         )
@@ -2573,26 +2823,124 @@ def get_file_path():
         browse = filedialog.askopenfilenames(
             title="Select Audio/Video Files",
             parent=root,
-            filetypes=[("Media", ("*.mp4", "*.mp3", "*.wav", "*.avi", "*.mkv", "*.flac")), ("All", "*.*")]
+            filetypes=[("Media", ("*.mp4", "*.mp3", "*.wav", "*.avi", "*.mkv", "*.flac", "*.m4a", "*.ogg")),
+                       ("All", "*.*")]
         )
         selected = list(browse)
 
     for i in selected:
         i = i.strip()
-        if i and i not in files:
-            files.append(i)
-            listbox.insert("end", os.path.basename(i))
+        if not i or i in files:
+            continue
+        # A file that was already processed can be added again (new settings,
+        # new result): drop its finished row first.
+        queue_view.rows = [r for r in queue_view.rows
+                           if not (r["path"] == i and r["state"] in ("done", "failed"))]
+        if i in queue_view.paths():     # still being worked on
+            continue
+        files.append(i)
+        queue_view.add(i)
     print(f"Queue: {len(files)} files")
-    update_status(f"Queue: {len(files)} file(s)")
+    update_status(f"{len(files)} file(s) ready." if files else "Add files to begin.")
 
-def remove_item():
-    """Remove selected files"""
-    global listbox, files
-    selected = list(listbox.curselection())[::-1]
-    for idx in selected:
-        listbox.delete(idx)
-        files.pop(idx)
-    update_status(f"Queue: {len(files)} file(s)")
+
+def _queue_removed(path):
+    if path in files:
+        files.remove(path)
+    update_status(f"{len(files)} file(s) ready." if files else "Add files to begin.")
+
+
+def clear_queue():
+    """Take every file that is not being processed off the list."""
+    files.clear()
+    if do:
+        queue_view.rows = [r for r in queue_view.rows if r["state"] == "working"]
+        queue_view._draw()
+    else:
+        queue_view.clear()
+    update_status("List cleared.")
+
+
+def _open_with_default_app(path):
+    if not path or not os.path.isfile(path):
+        return
+    import subprocess
+    try:
+        if os.name == "nt":
+            os.startfile(path)
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", path])
+        else:
+            subprocess.Popen(["xdg-open", path])
+    except Exception as e:
+        print(f"Could not open {path}: {e}")
+
+
+def make_preview():
+    """Run the current settings over a 20 s excerpt of the first queued file,
+    so a wrong setting costs seconds instead of a full run. The excerpt goes
+    through the real pipeline (_process_single_track), so what you hear is
+    what the export would sound like."""
+    global do
+    if do:
+        return
+    if not queue_view.paths():
+        update_status("Add a file first, then press Preview.")
+        return
+    import subprocess, tempfile
+    file_path = queue_view.paths()[0]
+    do = 1
+    ui["prev_row"].pack_forget()
+    refresh_buttons()
+    try:
+        video, audio_streams, sub_count, duration = check_streams(file_path)
+        if not audio_streams:
+            update_status("That file has no audio.")
+            return
+        track_idx = audio_streams[0]["index"]
+        length = min(PREVIEW_SECONDS, duration) if duration > 0 else PREVIEW_SECONDS
+        # A bit into the file: intros and credits are rarely representative.
+        start = max(0.0, min(duration * 0.35, duration - length)) if duration > 0 else 0.0
+        tmp = tempfile.mkdtemp(prefix="music_assassin_preview_")
+        orig = os.path.join(tmp, "original.wav")
+        result = os.path.join(tmp, "result.wav")
+        update_status(f"Making a {int(length)} second preview...")
+        n_ch = 2 if stereo_output and audio_streams[0].get("channels", 1) >= 2 else 1
+        (ffmpeg_input(file_path, ss=start, t=length)[f"a:{track_idx}"]
+            .output(orig, ac=n_ch, ar=sample_rate, acodec="pcm_s16le")
+            .overwrite_output().global_args("-loglevel", "error").run(quiet=True))
+        ok = _process_single_track(file_path, ffmpeg_input(file_path, ss=start, t=length), track_idx,
+                                   result, False, audio_streams, 0, length)
+        if ok and os.path.isfile(result):
+            ui["prev_orig"], ui["prev_result"] = orig, result
+            ui["prev_row"].pack(fill="x", padx=ui["px"](16), pady=(0, ui["px"](4)))
+            update_status(f"Preview ready ({int(length)} s from {start / 60:.0f} min in). "
+                          "Listen to both, then press Start.")
+        else:
+            update_status("The preview failed. Press Show details to see why.")
+    except Exception as e:
+        print(f"ERROR: {e}")
+        update_status("The preview failed. Press Show details to see why.")
+    finally:
+        do = 0
+        progress['value'] = 0
+        refresh_buttons()
+
+
+def on_start_clicked():
+    if do:
+        request_stop()
+    else:
+        demusic_list()
+
+
+def request_stop():
+    """Finish the file in progress, then stop."""
+    global do
+    ui["stopping"] = True
+    refresh_buttons()
+    update_status("Stopping after the current file...")
+
 
 def demusic_list():
     """Process queue"""
@@ -2600,32 +2948,42 @@ def demusic_list():
 
     if do == 1 or not files:
         if not files:
-            update_status("Add files to start")
+            update_status("Add files to start.")
         return
 
     do = 1
+    ui["stopping"] = False
+    ui["prev_row"].pack_forget()
+    refresh_buttons()
     completed = []
     failed = []
     mono = []
-    update_status(f"Processing {len(files)} file(s)...")
+    total = len(files)
+    update_status(f"Processing {total} file(s)...")
+
+    def finish(message):
+        global do
+        do = 0
+        ui["stopping"] = False
+        progress['value'] = 0
+        refresh_buttons()
+        update_status(message)
 
     def process_next():
-        global do
-        if do == 0 or not files:
-            if not files:
-                do = 0
-                print(f"\n=== COMPLETE ===\nProcessed: {len(completed)}\nFailed: {len(failed)}")
-                note = f", {len(mono)} in mono (low memory)" if mono else ""
-                update_status(f"Complete \u2014 {len(completed)} processed, {len(failed)} failed{note}")
+        if ui.get("stopping") or not files:
+            print(f"\n=== {'STOPPED' if files else 'COMPLETE'} ===\nProcessed: {len(completed)}\nFailed: {len(failed)}")
+            note = f", {len(mono)} in mono (low memory)" if mono else ""
+            lead = "Stopped" if files else "All done"
+            finish(f"{lead}. {len(completed)} processed, {len(failed)} failed{note}."
+                   + ("" if failed else " The new files are next to the originals."))
             return
 
         file_path = files.pop(0)
-        if listbox.size() > 0:
-            listbox.delete(0)
-
         filename = os.path.basename(file_path)
+        queue_view.set_state(file_path, "working")
+        queue_view.see(file_path)
         print(f"\nProcessing: {filename}")
-        update_status(f"Processing: {filename}")
+        update_status(f"Processing {len(completed) + len(failed) + 1} of {total}: {filename}")
 
         n_fallbacks = len(_mono_fallbacks)
         success = demusic_pro(file_path)
@@ -2635,19 +2993,15 @@ def demusic_list():
 
         if success:
             completed.append(filename)
-            Label(inprogressframe, text=f"  \u2713  {filename}"
-                                        f"{'   (mono: low memory)' if fell_back else ''}",
-                 font=("Segoe UI", 8), bg='#071a0f', fg='#4ade80',
-                 anchor="w", pady=2).pack(fill="x", pady=1)
+            queue_view.set_state(file_path, "done", "(mono: low memory)" if fell_back else "")
         else:
             failed.append(filename)
-            Label(inprogressframe, text=f"  \u2717  {filename}",
-                 font=("Segoe UI", 8), bg='#1a0707', fg='#f87171',
-                 anchor="w", pady=2).pack(fill="x", pady=1)
+            queue_view.set_state(file_path, "failed")
 
-        root.after(1000, process_next)
+        root.after(300, process_next)
 
     root.after(100, process_next)
+
 
 def on_closing():
     """Clean exit"""
@@ -2661,6 +3015,8 @@ def on_closing():
         if process1: process1.kill()
         if process2: process2.kill()
         root.destroy()
+        os._exit(0)   # the processing loop is on this thread; stop it now
+
 
 # The window class must equal StartupWMClass in the .deb's .desktop file
 # (build/build.sh), or GNOME/XWayland can't match the window to its entry and
@@ -2693,35 +3049,29 @@ def set_window_icon(root):
 # ============================================================================
 
 if __name__ == "__main__":
-    root = Tk(className=WM_CLASS)
-    root.wm_title("Music Assassin Pro v0.4.5")
-    root.geometry("720x660")
-    root.configure(background='#0d0d14')
-    root.minsize(640, 560)
+    def _make_root():
+        r = Tk(className=WM_CLASS)
+        r.wm_title(f"Music Assassin  v{APP_VERSION}")
+        r.configure(background=BG)
+        return r
 
+    root = _make_root()
     try:
         root.update()
-    except:
+    except Exception:
         os.environ['TCL_LIBRARY'] = '/usr/share/tcltk/tcl8.6'
         os.environ['TK_LIBRARY'] = '/usr/share/tcltk/tk8.6'
         root.destroy()
-        root = Tk(className=WM_CLASS)
-        root.wm_title("Music Assassin Pro v0.4.5")
-        root.geometry("720x660")
-        root.configure(background='#0d0d14')
-        root.minsize(640, 560)
+        root = _make_root()
 
+    root.resizable(False, False)
     set_window_icon(root)
     setFrames(root)
-
+    apply_settings()
     root.protocol("WM_DELETE_WINDOW", on_closing)
-    b1.configure(command=get_file_path)
-    b2.configure(command=remove_item)
-    f1.configure(command=demusic_list)
-    a1.configure(command=lambda: [files.clear(), listbox.delete(0, 'end'), update_status("Queue cleared")])
 
     print("=" * 55)
-    print("Music Assassin Pro v0.4.5 - MDX-Net/DEMUCS/SPLEETER")
+    print(f"Music Assassin v{APP_VERSION}")
     print("=" * 55)
     print(f"Fast engine:         {FAST_ENGINE_AVAILABLE}  (OpenVINO: {importlib.util.find_spec('openvino') is not None})")
     print(f"MDX-Net available:   {AUDIO_SEPARATOR_AVAILABLE}")
@@ -2733,13 +3083,8 @@ if __name__ == "__main__":
     print(f"SpeechDenoiser:      {os.path.isfile(_SPEECHDENOISER_PATH)}  (models/speechdenoiser/speechdenoiser.onnx)")
     print(f"OpenVINO provider:   {OV_AVAILABLE}  (pip install onnxruntime-openvino)")
     print(f"CPU cores:           {os.cpu_count()}")
-    print("Models:       htdemucs (fast) / htdemucs_ft / mdx_extra")
-    print("Speed:        model cache + INT8 quantize (htdemucs)")
-    print("Enhancers:    DeepFilter | DPDFNet | GTCRN | SpeechDenoiser | None")
-    print("Pipeline:     pre-filter \u2192 separate \u2192 [VAD] \u2192 DSP \u2192 [enhancer]")
-    print("Modes:        Normal / Balanced / Aggressive")
-    print("Memory:       chunked processing (<180MB)")
+    print(f"Settings file:       {_settings_path()}")
     print("=" * 55)
-    update_status("Ready \u2014 select separator and add files")
+    update_status("Ready. Add files to begin.")
 
     root.mainloop()

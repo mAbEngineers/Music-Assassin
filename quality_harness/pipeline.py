@@ -187,9 +187,11 @@ def run_config(mix: np.ndarray, sr: int, cfg: StageConfig) -> RunResult:
             stages.append("vad_gate")
 
         if cfg.music_mixback_db is not None and music is not None:
+            # The app's own mix stage: scaled by the post-process gain and
+            # limited, exactly as a user's export would be.
             gain = float(10.0 ** (cfg.music_mixback_db / 20.0))
-            n = min(vocals.shape[-1], music.shape[-1])
-            vocals = vocals[..., :n] + gain * music[..., :n]
+            vocals = app.mix_effects(vocals, None, 0.0, sr, music=music,
+                                     music_gain=gain * float(getattr(app, "_last_post_gain", 1.0)))
             stages.append("music_mixback:%gdB" % cfg.music_mixback_db)
 
         proc = time.perf_counter() - t0
