@@ -4,7 +4,7 @@
 
 # Music Assassin
 
-**Strip background music out of long audio and video — keep the dialogue, keep the SFX.**
+**Background music remover for long videos and audio. Offline, CPU-only, keeps the dialogue and the sound effects.**
 
 [![Release](https://img.shields.io/github/v/release/mAbEngineers/Music-Assassin?include_prereleases&sort=semver&label=release&color=orange)](https://github.com/mAbEngineers/Music-Assassin/releases)
 [![Downloads](https://img.shields.io/github/downloads/mAbEngineers/Music-Assassin/total?label=downloads&color=red)](https://github.com/mAbEngineers/Music-Assassin/releases)
@@ -23,11 +23,17 @@ background music over the dialogue, and it removes the music — using
 open-source AI separation models, entirely offline. No cloud services, no
 paid APIs, no GPU required.
 
+Use it to **remove background music from a video**, strip music from a
+podcast, lecture or documentary, or isolate dialogue and sound effects from a
+movie or TV episode. It is a free, open-source (MIT) alternative to cloud
+"vocal remover" and "music remover" services, for Windows and Linux.
+
 > **Sibling repo:** [`music-assassin-live`](https://github.com/mAbEngineers/music-assassin-live)
-> is the shippable, real-time Linux app — a "volume booster" that strips
-> music from whatever the device is playing, no manual routing. It's built
-> on whichever separator wins here; this repo is the research lab where
-> separation models get tested and benchmarked before being promoted there.
+> is the real-time app for Linux and Windows: a "volume booster" that strips
+> music from whatever the device is playing, no manual routing. This repo
+> works on files; that one works on live playback. This repo is also the
+> research lab where separation models get tested and benchmarked before
+> being promoted there.
 
 ---
 
@@ -170,6 +176,33 @@ stages? See the full per-version install matrix in
 
 Exact per-version Python/dependency matrix: [`CHANGELOG.md`](CHANGELOG.md) and
 [`requirements/REQUIREMENTS_GUIDE.md`](requirements/REQUIREMENTS_GUIDE.md).
+
+---
+
+## FAQ
+
+**How do I remove background music from a video?** Download the Windows
+`.exe` or the Linux `.deb` from the [Download](#download) section, add your
+video, and run it. The video stream passes through untouched and subtitles are
+kept.
+
+**Does it work offline, without a GPU?** Yes. Everything runs locally on the
+CPU; nothing is uploaded. The fast engine uses OpenVINO.
+
+**Can it keep the sound effects?** Yes. An optional pass extracts footsteps,
+impacts and ambience separately and mixes them back in.
+
+**How is this different from Ultimate Vocal Remover or Demucs?** It uses
+models from that family (MDX-Net/UVR, Demucs) and adds a pipeline around them
+for long files: a faster OpenVINO engine, sound-effect keeping, silence
+gating, batch queueing and video handling.
+
+**Why not a noise suppressor like DeepFilterNet, RNNoise or Krisp?** Those
+remove noise, not music; they treat music as speech. See the
+[limits note](#model-library).
+
+**Can I remove music from live audio instead of a file?**
+Use [Music Assassin Live](https://github.com/mAbEngineers/music-assassin-live).
 
 ---
 
